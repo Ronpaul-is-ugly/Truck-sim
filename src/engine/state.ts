@@ -1,4 +1,6 @@
 // The single truck state object. Systems write it; everything else reads it. Nothing keeps its own copy.
+import { initialEngineMech, type EngineMechState } from './physics/enginemech';
+
 export type KeyPos = 'off' | 'on' | 'run';
 export type LoadCase = 'bobtail' | 'loaded' | 'grade';
 export type Road = 'dry' | 'wet' | 'ice';
@@ -108,6 +110,8 @@ export interface TruckState {
   /** Cam signal position error versus the crank reference, in crank degrees. */
   camPhaseErrorDeg: number;
   air: AirBrakeState;
+  /** The base engine: cylinders, compression, blow-by, coolant level (physics/enginemech.ts). */
+  engineMech: EngineMechState;
 }
 
 export interface InitialState {
@@ -185,5 +189,6 @@ export function createTruckState(init: InitialState = {}): TruckState {
       brakeEffort: 0,
       parkPopped: false,
     },
+    engineMech: initialEngineMech(),
   };
 }

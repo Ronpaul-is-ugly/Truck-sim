@@ -4,6 +4,7 @@ import type { FaultSpec } from './faults';
 import type { KeyPos, LoadCase, Road, Conditions } from './state';
 import type { RouteSpec } from './electrical/harness';
 import type { AirCheck } from './physics/airbrakes';
+import type { EngineCheck } from './physics/enginemech';
 
 export type Action =
   | { type: 'setKey'; key: KeyPos }
@@ -14,6 +15,7 @@ export type Action =
   | { type: 'setBrakePedal'; pct: number }
   | { type: 'setParkBrake'; applied: boolean }
   | { type: 'airCheck'; check: AirCheck }
+  | { type: 'engineCheck'; check: EngineCheck }
   | { type: 'unplug'; circuit: string; connector: number }
   | { type: 'plug'; circuit: string; connector: number }
   | { type: 'wiggle'; circuit: string; seg?: number; connector?: number; ms?: number }

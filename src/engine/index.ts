@@ -4,6 +4,11 @@ export type { System, SimContext } from './system';
 export type { TruckState, KeyPos, InitialState, Conditions, DriverInputs, AirBrakeState, Wheel } from './state';
 export { WHEEL_IDS } from './state';
 export { AIR_SPEC, AIR_PARTS, AIR_CHECKS, governorCutOut, canReleasePark, type AirCheck, type ChamberSpec } from './physics/airbrakes';
+export {
+  ENGINE_SPEC, ENGINE_CHECKS, displacementL, cylinderPressure, cycleForCylinder, cylinderAngle, strokeAt, valveLift, pistonFromTdcMm, airTempC,
+  type EngineCheck, type EngineMechState, type CylinderMech, type Stroke, type Smoke, type CycleInputs,
+} from './physics/enginemech';
+export { ENGINE_FAULTS, ENGINE_COMPONENTS, ENGINE_QUIZ, type EngineFault, type EngineComponent, type QuizItem } from './data/engine';
 export { AIR_FAULTS, AIR_TESTS, type AirFault, type AirTest } from './data/airbrakes';
 export type { FaultSpec, FaultKind, Fault, Intermittent } from './faults';
 export { PRESETS, harnessFaultSpecs, type HarnessFault, type Preset } from './presets';
