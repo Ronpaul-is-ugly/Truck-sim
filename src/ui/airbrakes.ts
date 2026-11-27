@@ -1,6 +1,7 @@
 // Air brakes tab. Same engine instance as every other tab (window.simEngine): the compressor turns with
 // the engine, the dash gauges are the cluster's pressure sensors, and the codes go out on the J1939 bus.
 // This file only draws and dispatches actions; the physics lives in src/engine/physics/airbrakes.ts.
+import THREE from './three-global';
 import { AIR_CHECKS, AIR_FAULTS, AIR_SPEC, AIR_TESTS, WHEEL_IDS, type SimEngine, type Wheel, type AirCheck, type AirFault } from '../engine';
 
 declare global {
@@ -58,6 +59,19 @@ sec.innerHTML = `
     </div>
   </div>
   <div class="status" id="abStatus"></div>
+</section>
+<section class="panel" style="--c:#6fd3ff">
+  <h2>The air system on the truck · 3D</h2>
+  <div class="v3wrap">
+    <div><div class="v3box" id="ab3d"></div>
+      <p class="note" style="margin:6px 0 0">The same truck chassis and MX-13 engine the multimeter uses, with the air system on it. Lines glow with pressure: <span style="color:#6fd3ff">supply</span>, <span style="color:#69db7c">primary</span>, <span style="color:#ff6b6b">secondary</span>, <span style="color:#f5a623">spring hold-off</span>. Pushrods move with the pedal; travel is drawn twice its real size.</p></div>
+    <div>
+      <div class="bar" style="flex-wrap:wrap"><button id="ab3Home">Reset view</button><button id="ab3Wheel">Look at a rear wheel end</button></div>
+      <div class="v3chips" id="ab3Chips"></div>
+      <div class="egCard" id="ab3Card"></div>
+      <div class="egRead" id="ab3Read" style="grid-template-columns:repeat(2,1fr)"></div>
+    </div>
+  </div>
 </section>
 <div class="row r2">
   <section class="panel" style="--c:#f5a623">
@@ -517,3 +531,183 @@ function loop(now: number) {
   renderLogs();
 }
 requestAnimationFrame(loop);
+
+// ---------------- 3D: the air system on the shared truck chassis ----------------
+// World frame of h3EnvChassis: +x forward, +y up, +z = left (driver) side. Front axle x 2.2, drive axles x -4.0 and -5.3.
+type V3 = [number, number, number];
+const AIR3D: { id: string; label: string; pos: V3; dist?: number; view?: V3; what: string; check: string }[] = [
+  { id: 'compressor', label: 'Compressor', pos: [1.1, 1.42, 0.5], what: 'Gear-driven off the engine, so it turns whenever the engine runs. It only pumps when the governor loads it; unloaded, it spins without building air.', check: 'Build-up time: 85 to 100 psi in 45 seconds or less at fast idle.' },
+  { id: 'governor', label: 'Governor', pos: [1.0, 1.58, 0.62], what: 'Senses supply pressure and unloads the compressor at cut-out (about 125 psi), then loads it again at cut-in (about 20 psi lower).', check: 'Cut-out 120 to 135 psi; cut-in no more than 25 psi below cut-out.' },
+  { id: 'dryer', label: 'Air dryer', pos: [1.25, 0.98, 0.64], what: 'Desiccant cartridge that strips water and oil from the compressor air. Each time the governor cuts out it purges with a short blast.', check: 'One purge at every cut-out; a purge valve that blows constantly is stuck open. Water in the tanks means a saturated cartridge.' },
+  { id: 'supply', label: 'Supply (wet) tank', pos: [-1.95, 0.95, 0.1], what: 'First tank after the dryer. It catches what water gets through and feeds the primary and secondary tanks through one-way check valves.', check: 'Drain daily. The check valves must hold each circuit if the other one leaks.' },
+  { id: 'primary', label: 'Primary tank', pos: [-2.55, 1.03, 0.8], what: 'Feeds the primary (rear) circuit: the foot valve\'s primary side and the rear relay valve.', check: 'Green needle on the dash gauge.' },
+  { id: 'secondary', label: 'Secondary tank', pos: [-2.55, 0.4, 0.86], what: 'Feeds the secondary (front) circuit through the foot valve to the steer axle chambers.', check: 'Red needle on the dash gauge.' },
+  { id: 'foot', label: 'Foot valve', pos: [0.72, 1.48, 0.45], dist: 2.4, what: 'Dual treadle valve. Pedal travel meters air from both tanks: primary delivery signals the rear relay valve, secondary delivery goes to the front chambers.', check: 'Applied leakage: no more than 4 psi in one minute with a full brake application (tractor only).' },
+  { id: 'park', label: 'Park control valve', pos: [0.72, 1.88, 0.15], dist: 2.4, what: 'Yellow diamond knob. Pushed in, it sends air to hold off the spring brakes; pulled out, it exhausts that air and the springs apply.', check: 'Pops out on its own between 20 and 45 psi as air is fanned down.' },
+  { id: 'relay', label: 'Relay valve', pos: [-4.65, 1.08, 0.0], what: 'Mounted near the drive axles. A small control signal from the foot valve opens it, and it fills the rear chambers straight from the primary tank: faster application and release.', check: 'Rear chambers should apply and release as fast as the fronts.' },
+  { id: 'qr', label: 'Quick release valve', pos: [2.05, 1.08, 0.0], what: 'Sits between the front chambers and dumps their air right there when the pedal is released, instead of sending it all the way back to the foot valve.', check: 'Front brakes release promptly; air exhausts at the valve.' },
+  { id: 'frontCh', label: 'Front service chamber', pos: [2.45, 0.72, 0.72], view: [3.2, 0.4, -0.1], what: 'Type 20 service chamber. Air on the diaphragm pushes the pushrod out against the slack adjuster.', check: 'Pushrod stroke at 90 to 100 psi: readjust above 1-3/4 in.' },
+  { id: 'springCh', label: 'Spring brake chamber', pos: [-3.66, 0.62, 0.68], view: [-3.0, 0.14, 0.05], what: 'Type 30/30: a service chamber plus a powerful spring held back by hold-off air. Lose that air and the spring applies the brake.', check: 'Pushrod stroke at 90 to 100 psi: readjust above 2 in. Never take a spring chamber apart.' },
+  { id: 'slack', label: 'Slack adjuster', pos: [-3.86, 0.42, 0.68], view: [-3.05, 0.12, 0.1], what: 'Lever between the pushrod and the S-cam. It turns the pushrod\'s push into cam rotation and takes up lining wear automatically.', check: 'Measure applied stroke; an automatic slack that keeps going out of adjustment means a foundation brake problem.' },
+];
+const ab3Mat = (c: number) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.4, roughness: 0.55 });
+const glow = (c: number) => new THREE.MeshStandardMaterial({ color: 0x15151a, emissive: c, emissiveIntensity: 0.2, metalness: 0.2, roughness: 0.6 });
+interface AirParts {
+  lines: Record<string, THREE.MeshStandardMaterial>;
+  rods: { w: Wheel; mesh: THREE.Mesh; arm: THREE.Object3D; base: number; y: number }[];
+  purge: THREE.Mesh;
+  comp: THREE.MeshStandardMaterial;
+  tanks: Record<string, THREE.MeshStandardMaterial>;
+  knob: THREE.Object3D;
+}
+let airParts: AirParts | null = null;
+function ab3Build(g: THREE.Group): AirParts {
+  const add = (m: THREE.Object3D, p: V3, spot: string) => { m.position.set(p[0], p[1], p[2]); m.userData.spot = spot; g.add(m); return m; };
+  const cyl = (r: number, len: number, mat: THREE.Material, axis: 'x' | 'y' | 'z', seg = 24) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, seg), mat);
+    if (axis === 'x') m.rotation.z = Math.PI / 2;
+    if (axis === 'z') m.rotation.x = Math.PI / 2;
+    return m;
+  };
+  const box = (s: V3, mat: THREE.Material) => new THREE.Mesh(new THREE.BoxGeometry(s[0], s[1], s[2]), mat);
+  const lines: AirParts['lines'] = {};
+  const tube = (key: string, col: number, pts: V3[], r = 0.011) => {
+    const mat = lines[key] || (lines[key] = glow(col));
+    const c = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+    const m = new THREE.Mesh(new THREE.TubeGeometry(c, Math.max(24, pts.length * 14), r, 8, false), mat);
+    g.add(m);
+  };
+  const alu = ab3Mat(0xb7bdc5), dark = ab3Mat(0x2b2e33), blk = ab3Mat(0x18191c);
+  // compressor and governor on the engine (left side, rear gear train)
+  const comp = glow(0x69db7c);
+  const cg = new THREE.Group();
+  cg.add(cyl(0.075, 0.22, alu, 'x'));
+  const head = box([0.12, 0.08, 0.12], comp); head.position.set(0, 0.09, 0); cg.add(head);
+  add(cg, [1.1, 1.32, 0.52], 'compressor');
+  add(box([0.06, 0.07, 0.05], blk), [1.0, 1.48, 0.6], 'governor');
+  // air dryer on the left rail, ahead of the battery box
+  const dg = new THREE.Group();
+  dg.add(cyl(0.1, 0.3, ab3Mat(0x1d3d6b), 'y'));
+  const cap = cyl(0.105, 0.05, alu, 'y'); cap.position.y = -0.17; dg.add(cap);
+  add(dg, [1.25, 0.78, 0.64], 'dryer');
+  const purge = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe6e6e9, transparent: true, opacity: 0, depthWrite: false }));
+  purge.position.set(1.25, 0.5, 0.64); g.add(purge);
+  // supply tank across the frame; colored shells over the chassis model's primary/secondary tanks
+  const tanks: AirParts['tanks'] = { supply: glow(0x6fd3ff), primary: glow(0x69db7c), secondary: glow(0xff6b6b) };
+  add(cyl(0.12, 0.78, tanks.supply, 'z'), [-1.95, 0.78, 0], 'supply');
+  const shell = (mat: THREE.MeshStandardMaterial, y: number, id: string) => {
+    const sh = cyl(0.146, 0.87, mat.clone(), 'x', 32);
+    (sh.material as THREE.MeshStandardMaterial).transparent = true;
+    (sh.material as THREE.MeshStandardMaterial).opacity = 0.55;
+    tanks[id] = sh.material as THREE.MeshStandardMaterial;
+    add(sh, [-2.55, y, 0.72], id);
+  };
+  shell(tanks.primary, 0.86, 'primary');
+  shell(tanks.secondary, 0.56, 'secondary');
+  // foot valve and pedal on the cab floor, park knob on the dash
+  const fg = new THREE.Group();
+  fg.add(box([0.09, 0.1, 0.09], dark));
+  const ped = box([0.16, 0.012, 0.08], blk); ped.position.set(0.1, 0.08, 0); ped.rotation.z = -0.5; fg.add(ped);
+  add(fg, [0.72, 1.33, 0.45], 'foot');
+  const knob = box([0.05, 0.05, 0.02], new THREE.MeshStandardMaterial({ color: 0xf5c518, roughness: 0.4 }));
+  knob.rotation.z = Math.PI / 4;
+  const kg = new THREE.Group(); kg.add(knob); add(kg, [0.75, 1.85, 0.15], 'park');
+  // relay valve and quick release valve on crossmembers
+  add(box([0.13, 0.1, 0.13], dark), [-4.65, 0.98, 0], 'relay');
+  add(cyl(0.05, 0.06, dark, 'y'), [2.05, 0.98, 0], 'qr');
+  // chambers, pushrods, slack adjusters
+  const rods: AirParts['rods'] = [];
+  const chamber = (w: Wheel, x: number, z: number, spring: boolean) => {
+    const cgp = new THREE.Group();
+    const svc = cyl(0.085, 0.09, ab3Mat(0x202226), 'x'); cgp.add(svc);
+    if (spring) { const sp = cyl(0.09, 0.14, ab3Mat(0x2a2620), 'x'); sp.position.x = 0.115; cgp.add(sp); }
+    const y = spring ? 0.5 : 0.66;
+    add(cgp, [x, y, z], spring ? 'springCh' : 'frontCh');
+    const rod = cyl(0.009, 1, ab3Mat(0xd8dde3), 'x', 8);
+    g.add(rod);
+    const arm = new THREE.Group();
+    const lever = box([0.03, 0.2, 0.03], ab3Mat(0x8a8f96)); lever.position.y = 0.08; arm.add(lever);
+    arm.position.set(x - 0.12, y - 0.08, z); arm.userData.spot = 'slack';
+    g.add(arm);
+    rods.push({ w, mesh: rod, arm, base: x - 0.045, y });
+  };
+  for (const s of [1, -1]) {
+    chamber(s > 0 ? 'lf' : 'rf', 2.45, s * 0.72, false);
+    for (const x of [-4.0, -5.3]) chamber(s > 0 ? 'lr' : 'rr', x + 0.3, s * 0.68, true);
+  }
+  // plumbing
+  tube('comp', 0x6fd3ff, [[1.1, 1.32, 0.6], [1.2, 1.15, 0.66], [1.25, 0.95, 0.66]]);
+  tube('sup', 0x6fd3ff, [[1.25, 0.62, 0.6], [1.0, 1.0, 0.4], [-1.6, 1.0, 0.4], [-1.95, 0.9, 0.3]]);
+  tube('supPri', 0x6fd3ff, [[-1.95, 0.84, 0.35], [-2.15, 0.88, 0.55], [-2.2, 0.86, 0.6]]);
+  tube('supSec', 0x6fd3ff, [[-1.95, 0.72, 0.35], [-2.15, 0.6, 0.55], [-2.2, 0.56, 0.6]]);
+  tube('priFoot', 0x69db7c, [[-2.4, 0.86, 0.58], [-2.2, 1.0, 0.36], [0.4, 1.0, 0.36], [0.7, 1.3, 0.42]]);
+  tube('secFoot', 0xff6b6b, [[-2.4, 0.56, 0.58], [-2.25, 0.96, 0.32], [0.4, 0.96, 0.32], [0.74, 1.3, 0.47]]);
+  tube('appFront', 0xff6b6b, [[0.76, 1.3, 0.48], [0.9, 1.02, 0.25], [1.9, 0.98, 0.05], [2.05, 0.98, 0]]);
+  for (const s of [1, -1]) tube('appFront', 0xff6b6b, [[2.05, 0.96, 0], [2.3, 0.85, s * 0.4], [2.45, 0.72, s * 0.68]]);
+  tube('appRear', 0x69db7c, [[0.68, 1.3, 0.44], [0.55, 1.04, 0.2], [-4.4, 1.04, 0.08], [-4.6, 1.0, 0.02]]);
+  for (const s of [1, -1]) for (const x of [-4.0, -5.3]) tube('relayRear', 0x69db7c, [[-4.65, 0.98, 0], [x + 0.2, 0.9, s * 0.35], [x + 0.3, 0.56, s * 0.62]]);
+  tube('park', 0xf5a623, [[0.75, 1.85, 0.15], [0.62, 1.4, 0.12], [0.55, 1.07, 0.05]]);
+  tube('hold', 0xf5a623, [[0.55, 1.07, 0.05], [-4.3, 1.07, -0.05], [-4.6, 1.06, -0.1]]);
+  for (const s of [1, -1]) for (const x of [-4.0, -5.3]) tube('hold', 0xf5a623, [[-4.6, 1.06, -0.1], [x + 0.35, 0.95, s * 0.35], [x + 0.42, 0.56, s * 0.64]], 0.008);
+  return { lines, rods, purge, comp, tanks, knob: kg };
+}
+const lit = (m: THREE.MeshStandardMaterial | undefined, psi: number) => { if (m) m.emissiveIntensity = 0.08 + 1.1 * Math.max(0, Math.min(1, psi / 125)); };
+function ab3Frame() {
+  const P = airParts;
+  if (!P) return;
+  const s = eng().state, a = s.air;
+  const L: Record<string, number> = {
+    comp: s.running && a.compressorLoaded ? a.supplyPsi : 0, sup: a.supplyPsi, supPri: a.supplyPsi, supSec: a.supplyPsi,
+    priFoot: s.airPrimaryPsi, secFoot: s.airSecondaryPsi, appFront: a.appSecondaryPsi, appRear: a.appPrimaryPsi,
+    relayRear: Math.max(a.chamberPsi.lr, a.chamberPsi.rr), park: Math.max(s.airPrimaryPsi, s.airSecondaryPsi) * (s.driver.parkBrake ? 0 : 1), hold: a.holdoffPsi,
+  };
+  for (const k in P.lines) lit(P.lines[k], L[k] ?? 0);
+  lit(P.tanks.supply, a.supplyPsi);
+  lit(P.tanks.primary, s.airPrimaryPsi);
+  lit(P.tanks.secondary, s.airSecondaryPsi);
+  P.comp.emissiveIntensity = s.running && a.compressorLoaded ? 0.6 + 0.3 * Math.sin(performance.now() / 60) : 0.05;
+  (P.purge.material as THREE.MeshBasicMaterial).opacity = a.purging ? 0.35 + 0.2 * Math.sin(performance.now() / 40) : 0;
+  P.purge.scale.setScalar(a.purging ? 1 + ((performance.now() / 300) % 1) : 1);
+  P.knob.position.z = 0.15 + (s.driver.parkBrake ? 0.05 : 0);
+  for (const r of P.rods) {
+    const travel = 0.06 + a.strokeIn[r.w] * 0.0254 * 2; // drawn at twice real travel
+    r.mesh.scale.set(1, travel, 1);
+    r.mesh.position.set(r.base - travel / 2, r.y, r.arm.position.z);
+    r.arm.position.x = r.base - travel;
+    r.arm.rotation.z = -0.25 + a.strokeIn[r.w] * 0.18;
+    (r.mesh.material as THREE.MeshStandardMaterial).color.set(a.strokeIn[r.w] > AIR_SPEC.chambers[r.w].limit + 0.01 ? 0xff6b6b : 0xd8dde3);
+  }
+  if (++ab3Tick % 15 === 0) {
+    const cell = (k: string, v: string) => `<div><span>${k}</span><b>${v}</b></div>`;
+    $('ab3Read').innerHTML = cell('Supply', `${a.supplyPsi.toFixed(0)} psi`) + cell('Primary / secondary', `${s.airPrimaryPsi.toFixed(0)} / ${s.airSecondaryPsi.toFixed(0)}`) +
+      cell('Compressor', !s.running ? 'stopped' : a.compressorLoaded ? 'pumping' : 'unloaded') + cell('Spring brakes', a.springApply > 0.5 ? 'applied' : 'released') +
+      cell('Front stroke', `${a.strokeIn.lf.toFixed(2)}" / ${a.strokeIn.rf.toFixed(2)}"`) + cell('Rear stroke', `${a.strokeIn.lr.toFixed(2)}" / ${a.strokeIn.rr.toFixed(2)}"`);
+  }
+}
+let ab3Tick = 0;
+const ab3 = (window as unknown as { v3Viewer: (box: HTMLElement, o: unknown) => { select(id: string): void; home(now?: boolean): void; fly(p: unknown, t: unknown): void } }).v3Viewer($('ab3d'), {
+  env: 'truck',
+  envLabels: false,
+  spots: AIR3D,
+  cams: { truck: [[3.4, 4.2, 6.6], [-1.4, 0.9, 0]] },
+  extra: (g: THREE.Group) => { airParts = ab3Build(g); return airParts; },
+  onFrame: ab3Frame,
+  onPick: (id: string) => ab3Show(id),
+});
+function ab3Show(id: string | null) {
+  const c = AIR3D.find((x) => x.id === id);
+  $('ab3Card').innerHTML = c
+    ? `<h4>${esc(c.label)}</h4><p>${esc(c.what)}</p><p><span class="k">Check</span>${esc(c.check)}</p>`
+    : '<p class="muted">Click a label or a part to see what it does and how it is checked. Work the pedal, the park knob and the key in the panel above and watch the lines and pushrods.</p>';
+  document.querySelectorAll('#ab3Chips button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.s === id));
+}
+$('ab3Chips').innerHTML = AIR3D.map((c) => `<button data-s="${c.id}">${esc(c.label)}</button>`).join('');
+$('ab3Chips').addEventListener('click', (ev) => {
+  const b = (ev.target as HTMLElement).closest('button[data-s]') as HTMLElement | null;
+  if (!b) return;
+  ab3.select(b.dataset.s!);
+  ab3Show(b.dataset.s!);
+});
+$('ab3Home').addEventListener('click', () => ab3.home());
+$('ab3Wheel').addEventListener('click', () => { ab3.select('springCh'); ab3Show('springCh'); });
+ab3Show(null);

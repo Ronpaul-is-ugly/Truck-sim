@@ -389,17 +389,34 @@ $('roadSel').addEventListener('change',e=>{eng.dispatch({type:'setRoad',road:e.t
 $('btnBrake').addEventListener('click',()=>{if(S.ctrl.key==='run'&&S.mphAct>1){eng.dispatch({type:'brake'});updateCtrlUI();}});
 // ===================== tab navigation =====================
 const TABNAMES=['faults','engine','air','scan','meter','bus','codes','reference'];
+// Each system is its own page; the tool tabs share the Diagnostic tools page. One SimEngine behind all of them.
+const PAGEOF={engine:'engine',air:'air',meter:'meter',bus:'can',scan:'tools',faults:'tools',codes:'tools',reference:'tools'};
+const PAGES={engine:['Diesel engine fundamentals','Construction, the four-stroke cycle, timing and mechanical diagnosis on the MX-13'],
+  air:['Air brake system','Compressor, governor, dryer, tanks, foot valve, relay valve and chambers on the same truck'],
+  meter:['Electrical · multimeter','Circuits, sensors and harness diagnosis on the 3D engine and chassis'],
+  can:['CAN / J1939 network','How CAN works, the truck network, the instrument cluster and every frame on the bus'],
+  tools:['Diagnostic tools & reference','Scan tool, fault injection, code library and J1939 reference']};
+S.lastTool='scan';
 function showTab(t){
-  if(!TABNAMES.includes(t))t='faults';
+  if(t==='can')t='bus';if(t==='tools')t=S.lastTool;
+  if(!TABNAMES.includes(t))t='engine';
+  const pg=PAGEOF[t];if(pg==='tools')S.lastTool=t;
   TABNAMES.forEach(n=>$('sec-'+n).classList.toggle('on',n===t));
-  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
-  S.curTab=t;
+  document.querySelectorAll('[data-pages]').forEach(e=>{e.hidden=!e.dataset.pages.split(' ').includes(pg);});
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',PAGEOF[b.dataset.tab]===pg));
+  document.querySelectorAll('#subnav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  document.body.dataset.page=pg;
+  $('pageTitle').textContent=PAGES[pg][0];$('pageSub').textContent=PAGES[pg][1];document.title=PAGES[pg][0]+' · Tek Simulator';
+  const changed=S.page!==pg;S.curTab=t;S.page=pg;
   try{history.replaceState(null,'','#'+t);}catch(e){}
   if(t==='meter')renderDmm();
   if(t==='scan'){S.scanSig='';renderToolCodes();}
+  if(changed)window.scrollTo({top:0});
+  requestAnimationFrame(v3Showing);
 }
-$('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b){showTab(b.dataset.tab);$('nav').scrollIntoView({behavior:'smooth',block:'start'});}});
-window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(TABNAMES.includes(h)&&h!==S.curTab)showTab(h);});
+$('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)showTab(b.dataset.page||b.dataset.tab);});
+$('subnav').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)showTab(b.dataset.tab);});
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if((TABNAMES.includes(h)||h==='can'||h==='tools')&&h!==S.curTab)showTab(h);});
 
 function spnName(spn){if(spn===639)return'J1939 Network #1';const c=C.find(x=>x.spn===spn);return c?c.spnName:'SPN '+spn;}
 // ===================== scan tool =====================
@@ -1535,6 +1552,7 @@ function h3LoadEngineModel(){
       g.scene.traverse(o=>{if(o.name==='ValveCover')o.userData.cover=true;if(o.name==='Inside'){o.userData.inside=true;o.visible=false;}if(o.isMesh&&!o.material.userData.fixed){o.material.side=THREE.FrontSide;o.material.color.convertLinearToSRGB();o.material.userData.fixed=true;}});
       ENG3D.scene=g.scene;ENG3D.state='ready';H3MNT.clear();
       if(H3){delete H3.envs[3];delete H3.envs[4];H3.bg=null;h3Build();}
+      V3S.forEach(v=>v.build());
     },fail);}).catch(fail);
 }
 function h3EnvEngine(g,inTruck){
@@ -2085,11 +2103,86 @@ function setLevel(l){
 setInterval(()=>{if(DMM.level>=3&&HX.job&&$('hWrap').offsetParent&&(HX.wiggle&&performance.now()<HX.wiggle.until+400||S.ctrl.key==='run'))hRenderReading();},250);
 $('lvlBar').addEventListener('click',e=>{const b=e.target.closest('button[data-lvl]');if(b)setLevel(+b.dataset.lvl);});
 
-buildDiagram();renderTabs();updateMonitor(0);renderDmmBar();refreshAll();renderCodes();renderDmmLog();updateCtrlUI();setLevel(1);showTab(location.hash.slice(1)||'faults');
+buildDiagram();renderTabs();updateMonitor(0);renderDmmBar();refreshAll();renderCodes();renderDmmLog();updateCtrlUI();setLevel(1);showTab(location.hash.slice(1)||'engine');
 const first=[...MON.values()].find(r=>r.id===0x0CF00400);if(first){S.selMon=monKey(first);renderDecoder(first,true);}
 requestAnimationFrame(tick);
 
 
 // Inline onclick handlers in the markup call these by name.
-Object.assign(window,{$,ENG3D,F,applyMeterPlug,buildDiagram,checkQuiz,circuitType,clearCodes,compName,dmExplainBytes,drawFaultMark,drawScope,dtcLegacy,dtcSignature,dtcView,ecmSees,el,explainFromScan,faultObj,ffView,giveUpQuiz,h3AmpClamp,h3Banana,h3BgHarness,h3Breakout,h3Build,h3Clip,h3Conn,h3CorrTube,h3CorrTubeLite,h3DrawLcd,h3EnvChassis,h3EnvEngine,h3EnvEngineBuiltIn,h3Faceplate,h3Focus,h3HarnessHw,h3Init,h3InnerWires,h3Label,h3LiftAt,h3LoadEngineModel,h3Loom,h3Meter,h3ModuleModel,h3Mount,h3MountMarks,h3OpenWires,h3Perp,h3Probe,h3ProbeSet,h3RedX,h3RemoveDelta,h3RouteDir,h3Seal,h3SensorModel,h3Sub,h3TagMat,h3ViewDir,h3Vis,h3WireTail,h3box,h3cast,h3cyl,h3envlab,h3ext,h3label,h3line,h3mat,h3prof,h3rbox,h3rr,h3torus,h3tube,hAddTime,hCauseOpts,hCheckResult,hClampAmps,hClampLabel,hClampRow,hClampText,hClampZeroBtn,hConnSpec,hDetectable,hElecFault,hEndJob,hGender,hGenderR,hGo,hInspectConn,hInstallRoutes,hL5Answer,hL5Grade,hL5Point,hL5Record,hL5ResetView,hL5Scenario,hL5Start,hL5Submit,hL5Switch,hL5Top,hMakeFault,hMeasure,hMechHTML,hMechKey,hNodeUnder,hOpenLoom,hPinRow,hPlugAll,hPointLabel,hRandom,hRemovedNote,hRenderAll,hRenderAnswer,hRenderLog,hRenderMeterBar,hRenderReading,hRenderSecs,hRenderSection,hRenderTop,hRoute,hRunCheck,hSections,hSegTrunk,hSetClamp,hSetLead,hSetTool,hStartJob,hSubmit,hTimeNote,hTimePen,hToggleCover,hTogglePlug,hToggleRemove,hType,hUnder,hWiggle,isErr,j1587,lampTxt,layoutFor,layoutPills,measureNow,meterReq,monKey,ownerName,ownerOf,pgnOf,pointLabel,pp,probeFromScan,qHas,quizHides,quizLabel,rb1,rb2,readDM2,reading,refreshAll,refreshPanelLive,renderCluster,renderCodes,renderDecoder,renderDiagram,renderDmm,renderDmmBar,renderDmmLog,renderDmmReading,renderExplain,renderFaultPanel,renderMonitor,renderQuizBox,renderScan,renderTabs,renderToolCodes,runCutout,runRegen,scanCodeInfo,scanDetail,scanFaults,scanLiveShell,scanNet,scanSignature,scanTests,setFault,setKey,setLevel,setMeterCircuit,setNet,showTab,spawnPacket,spnName,startQuiz,statusBadge,termRes,tick,togglePanel,toggleTerm,toolLog,tx,updateCtrlUI,updateLive,updateMonitor,values,HX,DMM,S});
+// ---------------- shared 3D viewers for the Engine and Air brakes pages ----------------
+// Same MX-13 model and the same truck chassis the multimeter harness levels use (h3EnvEngine / h3EnvChassis),
+// each in its own small scene so the pages don't fight over the multimeter's camera.
+const V3S=[];
+const ENG_IN_TRUCK=[1.65,0.80,0];
+function v3Viewer(box,o){
+  const V={box,o,env:o.env||'engine',cover:true,sel:null,inited:false,parts:{},spots:[],labs:[]};
+  V3S.push(V);
+  V.init=()=>{
+    if(V.inited)return true;
+    h3LoadEngineModel();
+    if(typeof THREE==='undefined'||!THREE.OrbitControls){box.innerHTML='<p class="muted" style="padding:20px">3D view could not load.</p>';return false;}
+    let renderer;try{renderer=new THREE.WebGLRenderer({antialias:true});}catch(e){box.innerHTML='<p class="muted" style="padding:20px">WebGL is not available in this browser.</p>';return false;}
+    renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));box.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x050507);scene.fog=new THREE.Fog(0x050507,10,45);
+    const camera=new THREE.PerspectiveCamera(40,1,0.01,200);
+    const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.12;controls.screenSpacePanning=true;
+    scene.add(new THREE.HemisphereLight(0xdde6ff,0x202026,0.85));
+    [[0xffffff,0.85,[3,6,4]],[0x88aaff,0.35,[-4,2,-3]],[0xfff2e0,0.4,[5,1,-3]]].forEach(([c,i,p])=>{const d=new THREE.DirectionalLight(c,i);d.position.set(p[0],p[1],p[2]);scene.add(d);});
+    const world=new THREE.Group();scene.add(world);
+    const labels=document.createElement('div');labels.className='h3labels';box.appendChild(labels);
+    Object.assign(V,{renderer,scene,camera,controls,world,labels,inited:true});
+    const resize=()=>{const w=box.clientWidth||600,h=box.clientHeight||420;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();};
+    resize();if(window.ResizeObserver)new ResizeObserver(resize).observe(box);
+    let down=null;
+    renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});
+    renderer.domElement.addEventListener('pointerup',e=>{if(!down)return;const dx=e.clientX-down[0],dy=e.clientY-down[1];down=null;if(dx*dx+dy*dy>25)return;
+      const r=renderer.domElement.getBoundingClientRect(),m=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+      const rc=new THREE.Raycaster();rc.setFromCamera(m,camera);
+      const hit=rc.intersectObjects(world.children,true).find(x=>x.object.isMesh&&h3Vis(x.object));
+      let ob=hit&&hit.object;while(ob&&!ob.userData.spot)ob=ob.parent;
+      if(ob)V.pick(ob.userData.spot);});
+    V.build();V.home(true);
+    const loop=()=>{requestAnimationFrame(loop);if(!box.offsetParent)return;
+      if(V.tween){const p=Math.min(1,(performance.now()-V.tween.t0)/700),k=p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;controls.target.lerpVectors(V.tween.ft,V.tween.tt,k);camera.position.lerpVectors(V.tween.fp,V.tween.tp,k);if(p>=1)V.tween=null;}
+      if(o.onFrame)o.onFrame(V);
+      controls.update();renderer.render(scene,camera);
+      const w=box.clientWidth,h=box.clientHeight;
+      V.frame=(V.frame||0)+1;
+      if(V.frame%12===0){const rc=new THREE.Raycaster();const cp=camera.position;
+        V.labs.forEach(L=>{const dv=L.pos.clone().sub(cp),dist=dv.length();rc.set(cp,dv.normalize());rc.far=dist;
+          const hit=rc.intersectObjects(world.children,true).find(x=>x.object.isMesh&&h3Vis(x.object)&&!(x.object.material.transparent&&x.object.material.opacity<0.6));
+          L.el.classList.toggle('behind',!!(hit&&hit.distance<dist*0.95));});}
+      V.labs.forEach(L=>{if(L.hide&&L.hide()){L.el.style.display='none';return;}const v=L.pos.clone().project(camera);if(v.z>1||v.z<-1){L.el.style.display='none';return;}L.el.style.display='';L.el.style.left=((v.x+1)/2*w)+'px';L.el.style.top=((1-v.y)/2*h)+'px';});};
+    loop();return true;
+  };
+  V.off=()=>V.env==='truck'&&o.spotFrame==='engine'?ENG_IN_TRUCK:[0,0,0];
+  V.spotPos=s=>{const f=V.off();return new THREE.Vector3(s.pos[0]+f[0],s.pos[1]+f[1],s.pos[2]+f[2]);};
+  V.build=()=>{
+    if(!V.inited)return;
+    while(V.world.children.length)V.world.remove(V.world.children[0]);
+    V.labels.innerHTML='';V.labs=[];
+    const g=new THREE.Group();ENVLABS=[];
+    if(V.env==='engine')h3EnvEngine(g,false);else h3EnvChassis(g);
+    const envl=ENVLABS;ENVLABS=null;
+    V.parts=o.extra?o.extra(g,V)||{}:{};
+    V.world.add(g);V.root=g;
+    V.applyCover();
+    if(o.envLabels!==false)envl.forEach(([t,p])=>{const d=document.createElement('div');d.className='h3lab env';d.textContent=t;V.labels.appendChild(d);V.labs.push({el:d,pos:V3(p)});});
+    (o.spots||[]).forEach(s=>{const d=document.createElement('div');d.className='h3lab v3spot'+(s.id===V.sel?' on':'');d.textContent=s.label;d.dataset.spot=s.id;d.addEventListener('click',()=>V.pick(s.id));V.labels.appendChild(d);
+      V.labs.push({el:d,pos:V.spotPos(s),hide:()=>(s.inside&&V.cover)||(s.coverOnly&&!V.cover)||(s.env&&s.env!==V.env)});});
+  };
+  V.applyCover=()=>{if(V.root)V.root.traverse(ob=>{if(ob.userData.cover)ob.visible=V.cover;if(ob.userData.inside)ob.visible=!V.cover;});};
+  V.setCover=on=>{V.cover=on;V.applyCover();};
+  V.setEnv=env=>{V.env=env;V.build();V.home();};
+  V.home=now=>{const c=(o.cams||{})[V.env];if(!c||!V.inited)return;V.fly(V3(c[0]),V3(c[1]),now);};
+  V.fly=(pos,tgt,now)=>{if(now){V.camera.position.copy(pos);V.controls.target.copy(tgt);V.controls.update();return;}V.tween={t0:performance.now(),ft:V.controls.target.clone(),tt:tgt,fp:V.camera.position.clone(),tp:pos};};
+  V.select=id=>{V.sel=id;V.labels.querySelectorAll('.v3spot').forEach(d=>d.classList.toggle('on',d.dataset.spot===id));
+    const s=(o.spots||[]).find(x=>x.id===id);if(!s||!V.inited)return;if(s.inside&&V.cover&&o.onCoverNeeded)o.onCoverNeeded();
+    const p=V.spotPos(s);if(s.view){V.fly(V3(s.view),p);return;}const dir=V.camera.position.clone().sub(V.controls.target).normalize(),dist=s.dist||(V.env==='truck'?3.2:1.9);V.fly(p.clone().add(dir.multiplyScalar(dist)),p);};
+  V.pick=id=>{V.select(id);if(o.onPick)o.onPick(id);};
+  V.show=()=>{if(!V.inited&&box.offsetParent)V.init();};
+  return V;
+}
+function v3Showing(){V3S.forEach(v=>v.show());}
+Object.assign(window,{$,ENG3D,v3Viewer,v3Showing,F,applyMeterPlug,buildDiagram,checkQuiz,circuitType,clearCodes,compName,dmExplainBytes,drawFaultMark,drawScope,dtcLegacy,dtcSignature,dtcView,ecmSees,el,explainFromScan,faultObj,ffView,giveUpQuiz,h3AmpClamp,h3Banana,h3BgHarness,h3Breakout,h3Build,h3Clip,h3Conn,h3CorrTube,h3CorrTubeLite,h3DrawLcd,h3EnvChassis,h3EnvEngine,h3EnvEngineBuiltIn,h3Faceplate,h3Focus,h3HarnessHw,h3Init,h3InnerWires,h3Label,h3LiftAt,h3LoadEngineModel,h3Loom,h3Meter,h3ModuleModel,h3Mount,h3MountMarks,h3OpenWires,h3Perp,h3Probe,h3ProbeSet,h3RedX,h3RemoveDelta,h3RouteDir,h3Seal,h3SensorModel,h3Sub,h3TagMat,h3ViewDir,h3Vis,h3WireTail,h3box,h3cast,h3cyl,h3envlab,h3ext,h3label,h3line,h3mat,h3prof,h3rbox,h3rr,h3torus,h3tube,hAddTime,hCauseOpts,hCheckResult,hClampAmps,hClampLabel,hClampRow,hClampText,hClampZeroBtn,hConnSpec,hDetectable,hElecFault,hEndJob,hGender,hGenderR,hGo,hInspectConn,hInstallRoutes,hL5Answer,hL5Grade,hL5Point,hL5Record,hL5ResetView,hL5Scenario,hL5Start,hL5Submit,hL5Switch,hL5Top,hMakeFault,hMeasure,hMechHTML,hMechKey,hNodeUnder,hOpenLoom,hPinRow,hPlugAll,hPointLabel,hRandom,hRemovedNote,hRenderAll,hRenderAnswer,hRenderLog,hRenderMeterBar,hRenderReading,hRenderSecs,hRenderSection,hRenderTop,hRoute,hRunCheck,hSections,hSegTrunk,hSetClamp,hSetLead,hSetTool,hStartJob,hSubmit,hTimeNote,hTimePen,hToggleCover,hTogglePlug,hToggleRemove,hType,hUnder,hWiggle,isErr,j1587,lampTxt,layoutFor,layoutPills,measureNow,meterReq,monKey,ownerName,ownerOf,pgnOf,pointLabel,pp,probeFromScan,qHas,quizHides,quizLabel,rb1,rb2,readDM2,reading,refreshAll,refreshPanelLive,renderCluster,renderCodes,renderDecoder,renderDiagram,renderDmm,renderDmmBar,renderDmmLog,renderDmmReading,renderExplain,renderFaultPanel,renderMonitor,renderQuizBox,renderScan,renderTabs,renderToolCodes,runCutout,runRegen,scanCodeInfo,scanDetail,scanFaults,scanLiveShell,scanNet,scanSignature,scanTests,setFault,setKey,setLevel,setMeterCircuit,setNet,showTab,spawnPacket,spnName,startQuiz,statusBadge,termRes,tick,togglePanel,toggleTerm,toolLog,tx,updateCtrlUI,updateLive,updateMonitor,values,HX,DMM,S});
 setTimeout(()=>{try{h3LoadEngineModel();}catch(e){}},0);
