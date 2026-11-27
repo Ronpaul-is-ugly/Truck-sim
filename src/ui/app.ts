@@ -1527,7 +1527,9 @@ function h3LoadEngineModel(){
   if(!THREE.GLTFLoader){ENG3D.state='fail';return;}
   ENG3D.state='loading';
   const fail=e=>{console.warn('Engine model failed to load; using built-in geometry.',e);ENG3D.state='fail';};
-  fetch(new URL('models/mx13_engine.glb',document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();}).then(buf=>{
+  // hosts that won't serve .glb get the same bytes as base64 text (see scripts/preview.sh)
+  const getBin=u=>fetch(new URL(u,document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();});
+  getBin('models/mx13_engine.glb').catch(()=>fetch(new URL('models/mx13_engine.glb.b64.txt',document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(t=>Uint8Array.from(atob(t.trim()),c=>c.charCodeAt(0)).buffer)).then(buf=>{
     const gl=new THREE.GLTFLoader();
     gl.parse(buf,'',g=>{
       g.scene.traverse(o=>{if(o.name==='ValveCover')o.userData.cover=true;if(o.name==='Inside'){o.userData.inside=true;o.visible=false;}if(o.isMesh&&!o.material.userData.fixed){o.material.side=THREE.FrontSide;o.material.color.convertLinearToSRGB();o.material.userData.fixed=true;}});
