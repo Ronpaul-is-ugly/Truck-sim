@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ENGINE_SPEC, cylinderAngle, valveLift } from '../engine';
 import { TEARDOWN, type TeardownPart } from './teardown-data';
 import { detailHTML, detailFor } from './engine-detail';
@@ -24,6 +25,7 @@ const DECK = 0.415;
 const HEAD_TOP = 0.545;
 const CAM_Y = 0.605, SHAFT_Y = 0.66;
 const FLOOR = -0.62;
+const BELT_X = 0.712;
 const VLIFT = 0.014; // 14 mm valve lift
 
 // ---------------- materials ----------------
@@ -83,7 +85,8 @@ function mat(k: string) {
   let m = cur.mats.get(k);
   if (!m) {
     const [c, metal, rough] = MAT[k];
-    m = new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, side: THREE.DoubleSide });
+    m = new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, side: THREE.DoubleSide, envMapIntensity: 0.7 });
+    m.color.convertSRGBToLinear();
     if (CAST.has(k)) m.roughnessMap = surfaceTex('cast');
     if (k === 'liner') { m.map = surfaceTex('hone'); m.roughnessMap = m.map; }
     cur.mats.set(k, m);
@@ -209,6 +212,184 @@ for (const x of [...BULK, ...Array.from({ length: 6 }, (_, i) => CX(i))]) for (c
 
 // ---------------- the parts ----------------
 const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
+  belt(g) {
+    // pulleys in the belt plane (x = BELT_X): [y, z, r]
+    const P: Record<string, [number, number, number]> = { crank: [0, 0, 0.1], ac: [0.05, -0.29, 0.058], idler: [0.24, -0.24, 0.032], wp: [0.3, -0.04, 0.07], alt: [0.42, 0.27, 0.036], tens: [0.17, 0.2, 0.034] };
+    // belt path = convex hull of the pulley rims, so it wraps the outside of every pulley that touches it
+    const pts: [number, number][] = [];
+    for (const [y, z, r] of Object.values(P)) for (let k = 0; k < 64; k++) pts.push([z + Math.cos((k / 64) * Math.PI * 2) * (r + 0.004), y + Math.sin((k / 64) * Math.PI * 2) * (r + 0.004)]);
+    pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo: [number, number][] = [], hi: [number, number][] = [];
+    for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (const p of [...pts].reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+    const hull = [...lo.slice(0, -1), ...hi.slice(0, -1)];
+    const curve = new THREE.CatmullRomCurve3(hull.map(([z, y]) => new THREE.Vector3(BELT_X, y, z)), true, 'centripetal');
+    const bm = new THREE.Mesh(new THREE.TubeGeometry(curve, 400, 0.0045, 6, true), mat('rubber'));
+    put(bm, g, [0, 0, 0], 'bBelt', [0.25, 0, 0]);
+    for (const x of [-0.009, 0, 0.009]) {
+      const rib = new THREE.Mesh(new THREE.TubeGeometry(curve, 400, 0.0042, 6, true), mat('rubber'));
+      rib.position.x = x;
+      put(rib, g, [x, 0, 0], 'bBelt', [0.25, 0, 0]);
+    }
+    // automatic tensioner: base, spring housing, arm, pulley
+    const [ty, tz, tr] = P.tens;
+    const te: V = [0.15, 0.08, 0.1];
+    cyl(g, 0.04, 0.05, [0.64, ty + 0.06, tz + 0.06], 'x', 'alu', 'bTensioner', te, 28);
+    const arm = rbox(g, [0.016, 0.09, 0.03], [0.68, ty + 0.03, tz + 0.03], 'alu', 'bTensioner', te, 0.006);
+    arm.rotation.x = Math.PI / 4;
+    cyl(g, tr, 0.028, [BELT_X, ty, tz], 'x', 'steel', 'bTensioner', te, 32);
+    cyl(g, tr * 0.45, 0.03, [BELT_X, ty, tz], 'x', 'dark', 'bTensioner', te, 20);
+    bolt(g, [BELT_X + 0.018, ty, tz], 'x', 0.007, 'bTensioner', te);
+    box(g, [0.002, 0.012, 0.003], [0.666, ty + 0.1, tz + 0.06], 'yellow', 'bTensioner', te); // wear indicator
+    // idler
+    const [iy, iz, ir] = P.idler;
+    cyl(g, ir, 0.028, [BELT_X, iy, iz], 'x', 'steel', 'bIdler', [0.15, 0.05, -0.1], 32);
+    cyl(g, ir * 0.45, 0.03, [BELT_X, iy, iz], 'x', 'dark', 'bIdler', [0.15, 0.05, -0.1], 20);
+    bolt(g, [BELT_X + 0.018, iy, iz], 'x', 0.007, 'bIdler', [0.15, 0.05, -0.1]);
+    rbox(g, [0.11, 0.03, 0.03], [0.66, iy, iz], 'alu', 'bIdler', [0.15, 0.05, -0.1], 0.006);
+  },
+  alternator(g) {
+    const Y = 0.42, Z = 0.27;
+    const ae: V = [0.15, 0.1, 0.12];
+    // case: two aluminum halves with cooling slots, rear rectifier cover, B+ terminal
+    lathe(g, [[0, 0], [0.07, 0], [0.08, 0.01], [0.08, 0.13], [0.07, 0.14], [0, 0.14]], [0.55, Y, Z], 'alu', 'aBody', ae, 'x', 36);
+    torus(g, 0.081, 0.004, [0.62, Y, Z], 'x', 'alu', 'aBody', ae);
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      box(g, [0.04, 0.012, 0.004], [0.66, Y + Math.cos(a) * 0.079, Z + Math.sin(a) * 0.079], 'black', 'aBody', ae).rotation.x = -a;
+    }
+    cyl(g, 0.06, 0.02, [0.54, Y, Z], 'x', 'black', 'aBody', ae, 28);
+    cyl(g, 0.007, 0.03, [0.53, Y + 0.04, Z + 0.03], 'x', 'copper', 'aBody', ae, 8);
+    cyl(g, 0.012, 0.006, [0.52, Y + 0.04, Z + 0.03], 'x', 'dark', 'aBody', ae, 6);
+    for (const s of [1, -1]) cyl(g, 0.012, 0.14, [0.62, Y - 0.07, Z + s * 0.06], 'x', 'alu', 'aBody', ae, 16); // mounting ears
+    // fan and pulley
+    const pe: V = [0.3, 0.1, 0.12];
+    cyl(g, 0.065, 0.006, [0.693, Y, Z], 'x', 'steel', 'aPulley', pe, 28);
+    for (let k = 0; k < 10; k++) {
+      const b = box(g, [0.012, 0.03, 0.003], [0.698, Y, Z], 'steel', 'aPulley', pe);
+      b.rotation.x = (k / 10) * Math.PI * 2;
+      b.geometry.translate(0, 0.045, 0);
+    }
+    cyl(g, 0.036, 0.03, [BELT_X, Y, Z], 'x', 'forged', 'aPulley', pe, 28);
+    for (const x of [BELT_X - 0.008, BELT_X, BELT_X + 0.008]) torus(g, 0.036, 0.0022, [x, Y, Z], 'x', 'dark', 'aPulley', pe);
+    bolt(g, [BELT_X + 0.018, Y, Z], 'x', 0.01, 'aPulley', pe);
+    // bracket from the front of the block
+    const be: V = [0.1, -0.05, 0.08];
+    rbox(g, [0.03, 0.14, 0.18], [0.58, Y - 0.11, Z - 0.03], 'block', 'aBracket', be, 0.01);
+    for (const s of [1, -1]) bolt(g, [0.6, Y - 0.07, Z + s * 0.06], 'x', 0.008, 'aBracket', be);
+  },
+  acComp(g) {
+    const Y = 0.05, Z = -0.29;
+    const ae: V = [0.12, -0.05, -0.12];
+    lathe(g, [[0, 0], [0.06, 0], [0.068, 0.01], [0.068, 0.17], [0.055, 0.18], [0, 0.18]], [0.5, Y, Z], 'alu', 'acBody', ae, 'x', 32);
+    for (const x of [0.53, 0.6, 0.65]) torus(g, 0.069, 0.003, [x, Y, Z], 'x', 'alu', 'acBody', ae);
+    for (const [dz, c] of [[-0.03, 'alu'], [0.03, 'alu']] as const) {
+      cyl(g, 0.014, 0.04, [0.6, Y + 0.08, Z + dz], 'y', c, 'acBody', ae, 16);
+      cyl(g, 0.009, 0.01, [0.6, Y + 0.104, Z + dz], 'y', 'dark', 'acBody', ae, 6);
+    }
+    for (const s of [1, -1]) cyl(g, 0.012, 0.16, [0.6, Y + s * 0.07, Z - 0.04], 'x', 'alu', 'acBody', ae, 16);
+    rbox(g, [0.03, 0.18, 0.12], [0.57, Y, Z + 0.09], 'block', 'acBody', ae, 0.01);
+    // clutch coil, pulley and plate
+    const ce: V = [0.3, -0.05, -0.12];
+    cyl(g, 0.058, 0.03, [BELT_X, Y, Z], 'x', 'forged', 'acClutch', ce, 32);
+    for (const x of [BELT_X - 0.008, BELT_X, BELT_X + 0.008]) torus(g, 0.058, 0.0024, [x, Y, Z], 'x', 'dark', 'acClutch', ce);
+    cyl(g, 0.05, 0.006, [BELT_X + 0.019, Y, Z], 'x', 'steel', 'acClutch', ce, 32);
+    boltCircleX(g, BELT_X + 0.024, Y, Z, 0.03, 3, 'x', 0.005, 'acClutch', ce);
+    rbox(g, [0.016, 0.02, 0.012], [0.69, Y - 0.07, Z], 'black', 'acClutch', ce, 0.003);
+  },
+  ecm(g) {
+    const ee: V = [0, 0.05, 0.25];
+    // ECM on rubber isolators on the intake side, fuel-cooled plate, two sealed connectors
+    rbox(g, [0.17, 0.16, 0.035], [0.31, 0.225, 0.235], 'alu', 'ecmBox', ee, 0.006);
+    for (let k = 0; k < 7; k++) rbox(g, [0.15, 0.006, 0.01], [0.31, 0.165 + k * 0.02, 0.256], 'alu', 'ecmBox', ee, 0.002);
+    for (const [dx, dy] of [[0.07, 0.065], [-0.07, 0.065], [0.07, -0.065], [-0.07, -0.065]] as const) cyl(g, 0.01, 0.012, [0.31 + dx, 0.225 + dy, 0.213], 'z', 'rubber', 'ecmBox', ee, 12);
+    rbox(g, [0.05, 0.03, 0.04], [0.26, 0.315, 0.235], 'black', 'ecmBox', ee, 0.004);
+    rbox(g, [0.05, 0.03, 0.04], [0.36, 0.315, 0.235], 'black', 'ecmBox', ee, 0.004);
+    for (const x of [0.2, 0.42]) tube(g, [[0.31 + (x - 0.31) * 0.4, 0.21, 0.214], [x, 0.2, 0.213]], 0.004, 'black', 'ecmBox', ee); // fuel cooling lines
+    // harness: convoluted loom to the rail sensor, the valve cover pass-through, the crank sensor and along the block
+    const he: V = [0, 0.12, 0.2];
+    const loom = (pts: V[], r: number) => {
+      tube(g, pts, r, 'black', 'ecmHarness', he);
+      const c = new THREE.CatmullRomCurve3(pts.map((q) => new THREE.Vector3(q[0], q[1], q[2])));
+      for (let k = 1; k < 30; k++) {
+        const p = c.getPoint(k / 30), t = c.getTangent(k / 30);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.05, r * 0.25, 4, 10), mat('black'));
+        put(ring, g, [p.x, p.y, p.z], 'ecmHarness', he);
+        ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), t);
+      }
+    };
+    loom([[0.26, 0.33, 0.235], [0.3, 0.38, 0.262], [0.45, 0.4, 0.255], [0.545, 0.375, 0.225]], 0.008);
+    loom([[0.36, 0.33, 0.235], [0.3, 0.42, 0.262], [0.15, 0.48, 0.2], [0.1, 0.6, 0.168]], 0.009);
+    loom([[0.24, 0.32, 0.24], [0.0, 0.335, 0.215], [-0.38, 0.33, 0.19], [-0.55, 0.2, 0.2], [-0.62, -0.05, 0.25], [-0.64, -0.2, 0.3]], 0.008);
+    rbox(g, [0.03, 0.022, 0.03], [0.1, 0.625, 0.165], 'black', 'ecmHarness', he, 0.004);
+  },
+  egr(g) {
+    const ce: V = [0, 0.18, -0.14];
+    // cooler: stainless shell with coolant inlet and outlet, end tanks
+    cyl(g, 0.04, 0.3, [0.36, 0.585, -0.22], 'x', 'steel', 'eCooler', ce, 28);
+    for (const x of [0.21, 0.51]) {
+      cyl(g, 0.046, 0.02, [x, 0.585, -0.22], 'x', 'steel', 'eCooler', ce, 28);
+      boltCircleX(g, x + (x > 0.3 ? 0.011 : -0.011), 0.585, -0.22, 0.04, 6, x > 0.3 ? 'x' : '-x', 0.004, 'eCooler', ce);
+    }
+    for (const x of [0.28, 0.36, 0.44]) torus(g, 0.041, 0.003, [x, 0.585, -0.22], 'x', 'steel', 'eCooler', ce);
+    for (const [x, y] of [[0.25, 0.63], [0.47, 0.63]] as const) {
+      cyl(g, 0.01, 0.04, [x, y, -0.22], 'y', 'steel', 'eCooler', ce, 12);
+      clamp(g, 0.011, [x, y + 0.012, -0.22], 'y', 'eCooler', ce);
+    }
+    // valve at the front with its electric actuator
+    const ve: V = [0.15, 0.12, -0.05];
+    rbox(g, [0.06, 0.07, 0.07], [0.55, 0.6, -0.2], 'exh', 'eValve', ve, 0.01);
+    rbox(g, [0.05, 0.05, 0.06], [0.55, 0.66, -0.2], 'black', 'eValve', ve, 0.008);
+    rbox(g, [0.02, 0.016, 0.02], [0.575, 0.69, -0.18], 'black', 'eValve', ve, 0.003);
+    // pipes: hot gas from the manifold up to the cooler, cooled gas over the front to the intake, bellows joints
+    const pe: V = [0.2, 0.25, 0];
+    tube(g, [[0.4, 0.53, -0.255], [0.3, 0.55, -0.24], [0.2, 0.585, -0.22]], 0.02, 'steel', 'ePipes', pe);
+    tube(g, [[0.55, 0.62, -0.2], [0.63, 0.68, -0.08], [0.63, 0.7, 0.12], [0.45, 0.62, 0.27]], 0.024, 'steel', 'ePipes', pe);
+    for (const [x, y, z] of [[0.63, 0.69, 0.02], [0.3, 0.55, -0.24]] as const) for (const d of [-0.01, 0, 0.01]) torus(g, 0.027, 0.004, [x, y, z + d], 'z', 'steel', 'ePipes', pe);
+    for (const [x, y, z] of [[0.48, 0.63, 0.255], [0.56, 0.63, -0.18]] as const) clamp(g, 0.028, [x, y, z], 'x', 'ePipes', pe);
+  },
+  starter(g) {
+    const Y = -0.12, Z = 0.36;
+    const se: V = [0.15, -0.1, 0.12];
+    // motor: case, through bolts, nose housing bolted to the flywheel housing pad
+    lathe(g, [[0, 0], [0.055, 0], [0.06, 0.01], [0.06, 0.2], [0.055, 0.21], [0, 0.21]], [-0.56, Y, Z], 'dark', 'stMotor', se, 'x', 32);
+    lathe(g, [[0, 0], [0.05, 0], [0.055, 0.008], [0.04, 0.06], [0, 0.06]], [-0.62, Y, Z], 'alu', 'stMotor', se, 'x', 28);
+    for (const s of [1, -1]) cyl(g, 0.004, 0.22, [-0.455, Y + s * 0.058, Z], 'x', 'steel', 'stMotor', se, 6);
+    rbox(g, [0.03, 0.12, 0.06], [-0.63, Y, Z - 0.035], 'alu', 'stMotor', se, 0.008);
+    // solenoid on top with the battery and motor terminals
+    const sole: V = [0.12, 0.12, 0.12];
+    cyl(g, 0.032, 0.12, [-0.53, Y + 0.085, Z], 'x', 'dark', 'stSolenoid', sole, 24);
+    for (const dz of [-0.014, 0.014]) {
+      cyl(g, 0.005, 0.02, [-0.465, Y + 0.085, Z + dz], 'x', 'copper', 'stSolenoid', sole, 8);
+      cyl(g, 0.009, 0.006, [-0.46, Y + 0.085, Z + dz], 'x', 'dark', 'stSolenoid', sole, 6);
+    }
+    tube(g, [[-0.465, Y + 0.085, Z - 0.014], [-0.44, Y + 0.06, Z - 0.03], [-0.44, Y + 0.02, Z - 0.045]], 0.004, 'copper', 'stSolenoid', sole);
+    // drive pinion that meshes with the ring gear
+    gear(g, 0.022, 0.03, 12, [-0.655, Y, Z - 0.04], 'steel', 'stDrive', [-0.12, -0.12, 0.2]);
+    cyl(g, 0.01, 0.05, [-0.635, Y, Z - 0.04], 'x', 'steel', 'stDrive', [-0.12, -0.12, 0.2], 12);
+  },
+  airComp(g) {
+    const X = -0.47, Y = 0.22, Z = 0.3;
+    const ce: V = [0.12, 0, 0.15];
+    // crankcase, cylinder with cooling fins, mounting flange to the gear housing
+    rbox(g, [0.14, 0.12, 0.12], [X, Y, Z], 'block', 'acpCase', ce, 0.015);
+    cyl(g, 0.045, 0.06, [X, Y + 0.09, Z], 'y', 'block', 'acpCase', ce, 24);
+    for (let k = 0; k < 4; k++) cyl(g, 0.055, 0.004, [X, Y + 0.068 + k * 0.012, Z], 'y', 'block', 'acpCase', ce, 24);
+    cyl(g, 0.07, 0.016, [X - 0.075, Y, Z], 'x', 'block', 'acpCase', ce, 28);
+    boltCircleX(g, X - 0.06, Y, Z, 0.055, 4, 'x', 0.006, 'acpCase', ce, 'dark', Math.PI / 4);
+    tube(g, [[X + 0.07, Y - 0.04, Z - 0.03], [X + 0.12, Y - 0.06, Z - 0.08], [X + 0.12, Y - 0.1, Z - 0.1]], 0.004, 'steel', 'acpCase', ce); // oil supply
+    // water-cooled head with discharge and coolant ports
+    const he: V = [0.12, 0.15, 0.15];
+    rbox(g, [0.1, 0.035, 0.1], [X, Y + 0.137, Z], 'alu', 'acpHead', he, 0.008);
+    for (const [dx, dz] of [[0.04, 0.04], [-0.04, 0.04], [0.04, -0.04], [-0.04, -0.04]] as const) bolt(g, [X + dx, Y + 0.159, Z + dz], 'y', 0.006, 'acpHead', he);
+    cyl(g, 0.012, 0.03, [X + 0.03, Y + 0.17, Z + 0.0], 'y', 'forged', 'acpHead', he, 6);
+    tube(g, [[X + 0.03, Y + 0.18, Z], [X + 0.1, Y + 0.2, Z + 0.04], [X + 0.25, Y + 0.18, Z + 0.07]], 0.009, 'steel', 'acpHead', he); // discharge line
+    for (const dz of [-0.035, 0.035]) cyl(g, 0.006, 0.02, [X - 0.05, Y + 0.137, Z + dz], 'x', 'steel', 'acpHead', he, 8);
+    // drive gear
+    gear(g, 0.05, 0.022, 26, [X - 0.1, Y, Z], 'forged', 'acpGear', [-0.12, 0, 0.15]);
+  },
+
   block(g) {
     const holes = Array.from({ length: 6 }, (_, i) => [CX(i), 0, 0.074] as [number, number, number]);
     plate(g, [[-0.56, -0.155], [0.56, -0.155], [0.56, 0.155], [-0.56, 0.155]], holes, 0.17, DECK - 0.17, 'block', 'bCasting');
@@ -566,10 +747,10 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
     rbox(g, [0.05, 0.1, 0.06], [0.595, 0.22, 0.04], 'alu', 'wpBody', ex, 0.012);
     boltCircleX(g, 0.633, 0.3, -0.04, 0.058, 6, 'x', 0.006, 'wpBody', ex, 'dark', 0.3);
     // bearing hub, pulley with poly-V grooves, weep hole
-    cyl(g, 0.025, 0.04, [0.65, 0.3, -0.04], 'x', 'alu', 'wpBody', [0.2, 0, 0], 20);
-    cyl(g, 0.07, 0.03, [0.685, 0.3, -0.04], 'x', 'forged', 'wpBody', [0.2, 0, 0], 32);
-    for (const x of [0.675, 0.683, 0.691]) torus(g, 0.07, 0.0026, [x, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.2, 0, 0]);
-    boltCircleX(g, 0.703, 0.3, -0.04, 0.03, 4, 'x', 0.006, 'wpBody', [0.2, 0, 0]);
+    cyl(g, 0.025, 0.07, [0.665, 0.3, -0.04], 'x', 'alu', 'wpBody', [0.2, 0, 0], 20);
+    cyl(g, 0.07, 0.03, [0.71, 0.3, -0.04], 'x', 'forged', 'wpBody', [0.2, 0, 0], 32);
+    for (const x of [0.7, 0.708, 0.716]) torus(g, 0.07, 0.0026, [x, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.2, 0, 0]);
+    boltCircleX(g, 0.728, 0.3, -0.04, 0.03, 4, 'x', 0.006, 'wpBody', [0.2, 0, 0]);
     cyl(g, 0.003, 0.004, [0.645, 0.274, -0.04], 'y', 'black', 'wpBody', ex, 8);
     // impeller inside, seen when it comes apart
     cyl(g, 0.045, 0.012, [0.575, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.3, 0, 0], 12);
@@ -736,42 +917,66 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       const pg = new THREE.Group();
       put(pg, cg, [0, R + L, 0]);
       pg.userData.piston = i + 1;
-      lathe(pg, prof, [0, 0, 0], 'piston', 'pPiston', [0, 0.14, 0], 'y', 48);
-      for (const [dx, dz] of [[0.025, 0.04], [-0.025, 0.04], [0.025, -0.04], [-0.025, -0.04]] as const) cyl(pg, 0.012, 0.0012, [dx * 1.05, CH - 0.0003, dz * 1.05], 'y', 'bowl', 'pPiston', [0, 0.14, 0], 20);
-      for (const s of [1, -1]) cyl(pg, 0.021, 0.004, [s * 0.0625, 0, 0], 'x', 'bowl', 'pPiston', [0, 0.14, 0], 20); // pin bores
-      torus(pg, 0.0628, 0.0024, [0, CH - 0.012, 0], 'y', 'steel', 'pRing1', [0, 0.34, 0]);
-      torus(pg, 0.0628, 0.0024, [0, CH - 0.024, 0], 'y', 'forged', 'pRing2', [0, 0.3, 0]);
-      torus(pg, 0.0628, 0.0028, [0, CH - 0.038, 0], 'y', 'dark', 'pRing3', [0, 0.26, 0]);
-      lathe(pg, [[0.012, -0.05], [0.02, -0.05], [0.02, 0.05], [0.012, 0.05]], [0, 0, 0], 'steel', 'pPin', [0.2, 0, 0], 'x', 24);
-      for (const s of [1, -1]) torus(pg, 0.018, 0.0018, [s * 0.051, 0, 0], 'x', 'steel', 'pPin', [s * 0.3, 0, 0]);
-      // I-beam rod: small end with bushing, tapered beam, fracture-split big end, cap bolts
+      lathe(pg, prof, [0, 0, 0], 'piston', 'pPiston', undefined, 'y', 48);
+      for (const [dx, dz] of [[0.025, 0.04], [-0.025, 0.04], [0.025, -0.04], [-0.025, -0.04]] as const) cyl(pg, 0.012, 0.0012, [dx * 1.05, CH - 0.0003, dz * 1.05], 'y', 'bowl', 'pPiston', undefined, 20);
+      for (const s of [1, -1]) cyl(pg, 0.021, 0.004, [s * 0.0625, 0, 0], 'x', 'bowl', 'pPiston', undefined, 20); // pin bores
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2 + 0.3;
+        cyl(pg, 0.0018, 0.003, [Math.cos(a) * 0.0605, CH - 0.038, Math.sin(a) * 0.0605], 'y', 'black', 'pPiston', undefined, 6); // oil drain holes behind the oil ring
+      }
+      // rings, each with its end gap; the oil ring is two thin rails on a spring expander
+      const ring = (y: number, t: number, m: string, sub: string, ex: V, gapAt: number) => {
+        const r = torus(pg, 0.0628, t, [0, y, 0], 'y', m, sub, ex, Math.PI * 2 - 0.12);
+        r.rotation.y = gapAt;
+        return r;
+      };
+      ring(CH - 0.012, 0.0024, 'steel', 'pRing1', [0, 0.21, 0], 0);
+      ring(CH - 0.024, 0.0024, 'forged', 'pRing2', [0, 0.165, 0], 2.1);
+      ring(CH - 0.0355, 0.0011, 'steel', 'pRing3', [0, 0.12, 0], 4.2);
+      ring(CH - 0.0405, 0.0011, 'steel', 'pRing3', [0, 0.12, 0], 1.0);
+      torus(pg, 0.0618, 0.0016, [0, CH - 0.038, 0], 'y', 'dark', 'pRing3', [0, 0.12, 0]);
+      // full-floating wrist pin, held by a snap ring at each end
+      lathe(pg, [[0.012, -0.05], [0.02, -0.05], [0.02, 0.05], [0.012, 0.05]], [0, 0, 0], 'steel', 'pPin', [0.22, 0, 0], 'x', 24);
+      for (const s of [1, -1]) {
+        const clip = torus(pg, 0.018, 0.0016, [s * 0.053, 0, 0], 'x', 'steel', 'pClips', s > 0 ? [0.36, 0, 0] : [-0.13, 0, 0], Math.PI * 2 - 0.5);
+        clip.rotation.x = 0.4;
+      }
+      // I-beam rod: tapered small end with bushing, flanged beam, fracture-split big end, cap bolts
       const rod = new THREE.Group();
       put(rod, cg, [0, R + L, 0]);
       rod.userData.rod = i + 1;
-      cyl(rod, 0.03, 0.04, [0, 0, 0], 'x', 'forged', 'pRod', undefined, 24);
-      cyl(rod, 0.0205, 0.041, [0, 0, 0], 'x', 'bearing', 'pRod', undefined, 20);
-      cyl(rod, 0.004, 0.012, [0, 0.032, 0], 'y', 'black', 'pRod', undefined, 8); // oil hole to the pin
-      const beamLen = L - 0.09;
+      const rx: V = [0, -0.14, 0];
+      lathe(rod, [[0.0205, -0.018], [0.03, -0.018], [0.03, 0.018], [0.0205, 0.018]], [0, 0, 0], 'forged', 'pRod', rx, 'x', 28);
+      cyl(rod, 0.0205, 0.036, [0, 0, 0], 'x', 'bearing', 'pRod', rx, 20, true);
+      cyl(rod, 0.004, 0.012, [0, 0.03, 0], 'y', 'black', 'pRod', rx, 8); // oil hole to the pin
+      const beamLen = L - 0.085;
       for (const s of [1, -1]) {
-        const fl = box(rod, [0.03, beamLen, 0.006], [0, -L / 2, s * 0.012], 'forged', 'pRod');
+        const fl = box(rod, [0.03, beamLen, 0.006], [0, -L / 2 - 0.002, s * 0.011], 'forged', 'pRod', rx);
         fl.geometry.dispose();
-        fl.geometry = new THREE.CylinderGeometry(0.013, 0.019, beamLen, 4, 1);
+        fl.geometry = new THREE.CylinderGeometry(0.012, 0.02, beamLen, 4, 1);
         fl.geometry.rotateY(Math.PI / 4);
-        fl.geometry.scale(1, 1, 0.2);
+        fl.geometry.scale(1, 1, 0.22);
       }
-      box(rod, [0.01, beamLen, 0.024], [0, -L / 2, 0], 'forged', 'pRod');
-      torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pRod', undefined, Math.PI);
-      for (const s of [1, -1]) rbox(rod, [0.036, 0.03, 0.022], [0, -L + 0.004, s * 0.058], 'forged', 'pRod', undefined, 0.004);
-      const cap = torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pCap', [0, -0.16, 0], Math.PI);
+      box(rod, [0.009, beamLen, 0.022], [0, -L / 2 - 0.002, 0], 'forged', 'pRod', rx);
+      cyl(rod, 0.0025, beamLen, [0, -L / 2 - 0.002, 0], 'y', 'black', 'pRod', rx, 6); // drilled oil passage
+      torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pRod', rx, Math.PI);
+      for (const s of [1, -1]) rbox(rod, [0.036, 0.03, 0.022], [0, -L + 0.012, s * 0.058], 'forged', 'pRod', rx, 0.004);
+      box(rod, [0.004, 0.006, 0.008], [0.0185, -L + 0.012, 0.058], 'black', 'pRod', rx); // cylinder number stamp
+      const cx: V = [0, -0.26, 0];
+      const cap = torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pCap', cx, Math.PI);
       cap.rotation.x = Math.PI;
       for (const s of [1, -1]) {
-        rbox(rod, [0.036, 0.026, 0.022], [0, -L - 0.017, s * 0.058], 'forged', 'pCap', [0, -0.16, 0], 0.004);
-        cyl(rod, 0.006, 0.07, [0, -L - 0.01, s * 0.058], 'y', 'steel', 'pCap', [0, -0.26, 0], 8);
-        bolt(rod, [0, -L - 0.035, s * 0.058], '-y', 0.008, 'pCap', [0, -0.26, 0]);
+        rbox(rod, [0.036, 0.026, 0.022], [0, -L - 0.012, s * 0.058], 'forged', 'pCap', cx, 0.004);
+        box(rod, [0.004, 0.006, 0.008], [0.0185, -L - 0.012, 0.058], 'black', 'pCap', cx);
+        cyl(rod, 0.0055, 0.075, [0, -L - 0.005, s * 0.058], 'y', 'steel', 'pBolts', [0, -0.42, 0], 8);
+        bolt(rod, [0, -L - 0.03, s * 0.058], '-y', 0.008, 'pBolts', [0, -0.42, 0]);
       }
-      const sh1 = cyl(rod, 0.046, 0.034, [0, -L, 0], 'x', 'bearing', 'pShells', [0, -0.06, 0], 24, true);
-      sh1.material = mat('bearing');
-      (sh1.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      // bearing shells: upper half in the rod, lower half in the cap; both slide out sideways
+      for (const [half, ex] of [[0, [0.15, -0.02, 0]], [1, [0.15, -0.3, 0]]] as const) {
+        const geo = new THREE.CylinderGeometry(0.046, 0.046, 0.032, 24, 1, true, half ? Math.PI / 2 : -Math.PI / 2, Math.PI);
+        geo.rotateZ(Math.PI / 2);
+        put(new THREE.Mesh(geo, mat('bearing')), rod, [0, -L, 0], 'pShells', ex as unknown as V);
+      }
     }
   },
   mainCaps(g) {
@@ -841,6 +1046,42 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
   },
 };
 
+// Inspection bench: the order each part comes apart in, piece by piece. Sub-parts not listed stay put (the base piece).
+const BENCH_ORDER: Record<string, string[]> = {
+  turbo: ['tCompHsg', 'tCompWheel', 'tTurbHsg', 'tShaft'],
+  exhaustManifold: ['emGasket', 'emFront'],
+  intakeManifold: ['imInlet'],
+  valveCover: ['vcCap', 'vcGasket'],
+  fuel: ['fLines', 'fPump'],
+  injectors: ['injWasher', 'injNozzle'],
+  rockers: ['rBridges', 'rArms', 'rRollers'],
+  camshaft: ['cGear'],
+  head: ['hBolts'],
+  valves: ['vRetainers', 'vSprings', 'vIntake', 'vExhaust'],
+  headGasket: ['hgRings'],
+  damper: ['dPulley'],
+  waterPump: ['wpStat'],
+  frontCover: ['fcSeal'],
+  oilModule: ['omFilters'],
+  flywheel: ['fwRing'],
+  flywheelHousing: ['fhGears'],
+  oilPan: ['opPlug'],
+  oilPump: ['pPickup'],
+  belt: ['bBelt', 'bTensioner', 'bIdler'],
+  alternator: ['aPulley', 'aBracket'],
+  acComp: ['acClutch'],
+  ecm: ['ecmHarness'],
+  egr: ['eValve', 'ePipes'],
+  starter: ['stSolenoid', 'stDrive'],
+  airComp: ['acpHead', 'acpGear'],
+  pistons: ['pBolts', 'pCap', 'pShells', 'pClips', 'pPin', 'pRod', 'pRing1', 'pRing2', 'pRing3'],
+  mainCaps: ['mcBolts'],
+  crankshaft: ['ckGear'],
+  mainBearings: ['mbThrust'],
+  liners: ['lSeals'],
+  block: [],
+};
+
 // ---------------- mount ----------------
 export function mountTeardown(root: HTMLElement) {
   root.innerHTML = `
@@ -848,7 +1089,9 @@ export function mountTeardown(root: HTMLElement) {
   <div class="v3wrap tdWrap">
     <div>
       <div class="v3box" id="td3d"><div class="tdTip" id="tdTip"></div><div class="tdInspect" id="tdInspect" hidden>
-        <b id="tdInsName"></b><label>Explode <input type="range" id="tdExplode" min="0" max="100" value="100"></label><button id="tdBack">Back to the engine</button></div></div>
+        <b id="tdInsName"></b><span class="tdStepTxt" id="tdStepTxt"></span>
+        <span class="tdBenchBtns"><button id="tdBPrev">◂ Put back</button><button id="tdBNext" class="dark">Take off next ▸</button><button id="tdBAll">All apart</button><button id="tdBNone">Reassemble</button></span>
+        <button id="tdBack">Back to the engine</button></div></div>
       <div class="bar tdBar">
         <button id="tdNext" class="dark">Remove next part</button><button id="tdPrev">Install last part</button>
         <button id="tdStrip">Strip to the block</button><button id="tdBuild">Rebuild it</button>
@@ -875,6 +1118,9 @@ export function mountTeardown(root: HTMLElement) {
     cur = c;
     c.g.userData.comp = part.id;
     builders[part.id](c.g, c);
+    c.g.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
+    });
     world.add(c.g);
     comps.push(c);
     byId.set(part.id, c);
@@ -900,12 +1146,28 @@ export function mountTeardown(root: HTMLElement) {
   let renderer: THREE.WebGLRenderer | null = null;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050507);
-  scene.add(new THREE.HemisphereLight(0xdde6ff, 0x202026, 0.9));
-  for (const [c, i, p] of [[0xffffff, 0.9, [3, 6, 4]], [0x88aaff, 0.35, [-4, 2, -3]], [0xfff2e0, 0.45, [4, 1, -4]]] as [number, number, V][]) {
+  scene.add(new THREE.HemisphereLight(0xdde6ff, 0x202026, 0.35));
+  for (const [c, i, p] of [[0xffffff, 1.6, [3, 6, 4]], [0x88aaff, 0.3, [-4, 2, -3]], [0xfff2e0, 0.4, [4, 1, -4]]] as [number, number, V][]) {
     const d = new THREE.DirectionalLight(c, i);
     d.position.set(p[0], p[1], p[2]);
+    if (p[1] === 6) {
+      d.castShadow = true;
+      d.shadow.mapSize.set(2048, 2048);
+      const sc = d.shadow.camera as THREE.OrthographicCamera;
+      sc.left = sc.bottom = -3;
+      sc.right = sc.top = 3;
+      sc.near = 1;
+      sc.far = 15;
+      d.shadow.bias = -0.0008;
+      d.shadow.normalBias = 0.01;
+    }
     scene.add(d);
   }
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: 0.45 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = FLOOR - 0.001;
+  floor.receiveShadow = true;
+  scene.add(floor);
   scene.add(world);
   const grid = new THREE.GridHelper(6, 30, 0x1d1d25, 0x121217);
   grid.position.y = FLOOR;
@@ -934,6 +1196,7 @@ export function mountTeardown(root: HTMLElement) {
     turning: false,
     inspect: null as string | null,
     explode: 1,
+    bench: { order: [] as string[], step: 0, k: new Map<string, number>() },
     subSel: null as string | null,
     queue: [] as { c: Comp; to: boolean }[],
     anim: null as null | { c: Comp; t0: number; from: THREE.Vector3; to: THREE.Vector3; lift: number },
@@ -1155,10 +1418,53 @@ export function mountTeardown(root: HTMLElement) {
     for (const cc of comps) {
       cc.g.traverse((o) => {
         if (!o.userData.ex) return;
-        const k = c === cc ? S.explode : 0;
+        const k = c === cc ? subK(o) : 0;
         o.position.copy(o.userData.p0 as THREE.Vector3).addScaledVector(o.userData.ex as THREE.Vector3, k);
       });
     }
+  }
+  // which bench sub a moving object belongs to (its own, or the nearest parent's)
+  function subOf(o: THREE.Object3D | null): string | undefined {
+    while (o) {
+      if (o.userData.sub) return o.userData.sub as string;
+      o = o.parent;
+    }
+    return undefined;
+  }
+  function subK(o: THREE.Object3D) {
+    const id = subOf(o);
+    return id ? S.bench.k.get(id) ?? 0 : 0;
+  }
+  function benchTarget(id: string) {
+    const i = S.bench.order.indexOf(id);
+    return i >= 0 && i < S.bench.step ? 1 : 0;
+  }
+  function stepBench(dt: number) {
+    if (!S.inspect) return;
+    let moved = false;
+    for (const id of S.bench.order) {
+      const k = S.bench.k.get(id) ?? 0, t = benchTarget(id);
+      if (k === t) continue;
+      S.bench.k.set(id, t > k ? Math.min(t, k + dt * 1.8) : Math.max(t, k - dt * 1.8));
+      moved = true;
+    }
+    if (moved) setExplode();
+  }
+  function renderBench() {
+    const c = S.inspect ? byId.get(S.inspect) : null;
+    if (!c) return;
+    const n = S.bench.order.length, st = S.bench.step;
+    const name = (id: string) => c.part.subs.find((x) => x.id === id)?.name ?? id;
+    $('tdStepTxt').textContent = !n ? 'One piece' : st === 0 ? `Assembled · ${n} pieces come off` : st === n ? `Fully apart · ${n} of ${n}` : `${st} of ${n} off · last: ${name(S.bench.order[st - 1])}`;
+    ($('tdBPrev') as HTMLButtonElement).disabled = st === 0;
+    ($('tdBNext') as HTMLButtonElement).disabled = st >= n;
+    ($('tdBNext') as HTMLButtonElement).textContent = st < n ? `Take off: ${name(S.bench.order[st])} ▸` : 'Take off next ▸';
+    ($('tdBAll') as HTMLButtonElement).disabled = st >= n;
+    ($('tdBNone') as HTMLButtonElement).disabled = st === 0;
+  }
+  function benchGo(step: number) {
+    S.bench.step = Math.max(0, Math.min(S.bench.order.length, step));
+    renderBench();
   }
   function enterInspect(id: string) {
     const c = byId.get(id)!;
@@ -1175,8 +1481,9 @@ export function mountTeardown(root: HTMLElement) {
     for (const o of c.inst) if (typeof o.userData.inst === 'number') o.visible = o.userData.inst === 0;
     c.g.position.set(0, 0, 0);
     pose(0);
-    S.explode = 1;
-    ($('tdExplode') as HTMLInputElement).value = '100';
+    // frame the camera on the fully apart layout, then start assembled
+    S.bench.order = BENCH_ORDER[id] ?? [];
+    S.bench.k = new Map(S.bench.order.map((s) => [s, 1]));
     setExplode();
     world.updateMatrixWorld(true);
     const bb = new THREE.Box3();
@@ -1185,9 +1492,14 @@ export function mountTeardown(root: HTMLElement) {
     });
     const ctr = bb.getCenter(new THREE.Vector3()), size = bb.getSize(new THREE.Vector3()).length();
     const dir = new THREE.Vector3(0.9, 0.55, 1.1).normalize();
-    fly(ctr.clone().addScaledVector(dir, Math.max(0.4, size * 1.35)), ctr);
+    ctr.y += size * 0.1; // leave room for the bench controls across the top
+    fly(ctr.clone().addScaledVector(dir, Math.max(0.4, size * 1.5)), ctr);
+    S.bench.k = new Map(S.bench.order.map((s) => [s, 0]));
+    S.bench.step = 0;
+    setExplode();
     $('tdInspect').hidden = false;
     $('tdInsName').textContent = c.part.name;
+    renderBench();
     buildSubLabels(c);
     paint();
     renderCard();
@@ -1197,6 +1509,7 @@ export function mountTeardown(root: HTMLElement) {
     const c = byId.get(S.inspect)!;
     S.inspect = null;
     S.subSel = null;
+    S.bench.k = new Map();
     for (const cc of comps) cc.g.visible = true;
     for (const o of c.inst) o.visible = true;
     grid.visible = true;
@@ -1299,10 +1612,14 @@ export function mountTeardown(root: HTMLElement) {
     else flyHome();
   });
   $('tdBack').addEventListener('click', exitInspect);
-  $('tdExplode').addEventListener('input', (e) => {
-    S.explode = +(e.target as HTMLInputElement).value / 100;
-    setExplode();
+  $('tdBNext').addEventListener('click', () => {
+    const id = S.bench.order[S.bench.step];
+    benchGo(S.bench.step + 1);
+    if (id && S.subSel !== id) pickSub(id);
   });
+  $('tdBPrev').addEventListener('click', () => benchGo(S.bench.step - 1));
+  $('tdBAll').addEventListener('click', () => benchGo(S.bench.order.length));
+  $('tdBNone').addEventListener('click', () => benchGo(0));
   stepsEl.addEventListener('click', (e) => {
     const li = (e.target as HTMLElement).closest('li[data-id]') as HTMLElement | null;
     if (!li) return;
@@ -1341,6 +1658,15 @@ export function mountTeardown(root: HTMLElement) {
     }
     const r = renderer;
     r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // shop lighting: a soft room reflection on the metal, filmic tone mapping and a shadow under the engine
+    r.outputEncoding = THREE.sRGBEncoding;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = 0.9;
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    const pm = new THREE.PMREMGenerator(r);
+    scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
     box3d.insertBefore(r.domElement, box3d.firstChild);
     controls = new OrbitControls(camera, r.domElement);
     controls.enableDamping = true;
@@ -1416,6 +1742,7 @@ export function mountTeardown(root: HTMLElement) {
       last = now;
       if (!box3d.offsetParent) return;
       stepAnim(now);
+      stepBench(dt);
       if (S.turning && !S.inspect) {
         S.phi = (S.phi + dt * 90) % 720; // 15 rpm: slow enough to follow every stroke
         pose(S.phi);

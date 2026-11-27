@@ -200,6 +200,47 @@ export const DETAIL: Record<string, { title: string; paras: string[] }> = {
       'Common failures are oil seal leaks (oil in the charge air boots, blue smoke), bearing wear (whine, wheels rubbing the housing), foreign object damage to the compressor wheel from a torn air filter, and sticking VGT vanes from soot (low or high boost codes). Inspect shaft end play and radial play with a dial indicator and check VGT actuator travel with the scan tool.',
     ],
   },
+  belt: {
+    title: 'Accessory drive belt',
+    paras: [
+      'Modern engines drive their accessories with a single poly-V belt, often called a serpentine belt because it snakes around several pulleys. The crankshaft pulley on the front of the vibration damper drives it, and it turns the water pump, the alternator and the A/C compressor; on some trucks also the fan hub and power steering pump. Many heavy-duty engines use two belts, one for the fan and water pump and one for the alternator and A/C.',
+      'The belt is made of EPDM rubber with strong polyester or aramid tension cords near the back and several V-shaped ribs on the inside that grip the pulley grooves. EPDM does not crack the way older neoprene belts did; instead it wears like a tire, with the ribs slowly losing material. That is why a groove depth gauge, not a visual check for cracks, is the right way to judge an EPDM belt.',
+      'An automatic tensioner keeps the belt at the right tension for its whole life. A torsion spring inside the tensioner pushes its arm and pulley against the belt, and a damper stops the arm from bouncing. The arm has wear marks: once the indicator is outside the range the belt has stretched too far or the tensioner is weak. Idler pulleys guide the belt to wrap more of each driven pulley.',
+      'A squealing belt, a glazed shiny rib surface, a bouncing tensioner, or a pulley bearing that growls when spun by hand all point to trouble. If a belt comes off, the engine loses its water pump and alternator at once, so a broken belt quickly leads to overheating and a dead battery. Always check that all pulleys line up when fitting a new belt.',
+    ],
+  },
+  alternator: {
+    title: 'Alternator',
+    paras: [
+      'The alternator keeps the batteries charged and supplies every electrical load once the engine is running: lights, ECMs, fans, heaters and in-cab equipment. A heavy truck alternator typically puts out 160 to 320 A at 12 V. Inside, a rotor with an electromagnet spins inside three sets of stationary copper windings (the stator), generating alternating current.',
+      'Six or more diodes in the rectifier turn that AC into DC, and a built-in voltage regulator controls the current to the rotor field so the output stays around 13.8 to 14.4 V no matter the engine speed or load. Many newer alternators are brushless, with no slip rings to wear out. Some are controlled by the ECM over a data link and adjust their output to save fuel.',
+      'When a truck has charging problems, test before replacing parts: check battery state of charge, charging voltage at the batteries with the engine running, voltage drop on the positive and ground cables under load, and alternator output with a carbon pile or load tester. A large share of "bad alternators" are actually corroded cables or a poor ground.',
+    ],
+  },
+  acComp: {
+    title: 'A/C compressor',
+    paras: [
+      'The A/C compressor is the pump of the cab air-conditioning system. It draws low-pressure refrigerant vapor from the evaporator, compresses it to high pressure and temperature, and sends it to the condenser in front of the radiator, where it gives up its heat and condenses into a liquid.',
+      'The pulley turns whenever the engine runs, but the compressor only works when the electromagnetic clutch is energized. Current through the clutch coil pulls the clutch plate against the pulley face and locks them together. Inside, most truck compressors use several small pistons driven by a swash plate.',
+      'Refrigerant must never be vented to the air. Federal rules require it to be recovered with a certified machine by a certified technician before any line is opened. Check the clutch air gap, look for oily residue around the shaft seal and fittings (a sign of a leak), and listen for a noisy pulley bearing.',
+    ],
+  },
+  starter: {
+    title: 'Starter motor',
+    paras: [
+      'A diesel must be turned fast enough, roughly 100 to 200 rpm, for compression to heat the air above the fuel\'s ignition point. The starter does that. It is a compact, very powerful DC motor that can draw 600 to 1,000 A or more in cold weather, so heavy trucks use several batteries in parallel and heavy cables.',
+      'When the key is turned, a small current energizes the solenoid on top of the starter. The solenoid does two jobs: its plunger shifts the drive pinion forward into mesh with the flywheel ring gear, and its heavy contacts close to send battery current to the motor. A planetary gear reduction multiplies the motor\'s torque, and an overrunning (one-way) clutch lets the pinion freewheel once the engine starts so the engine cannot spin the starter to destruction.',
+      'Slow cranking is most often caused by low batteries, loose or corroded cables, or a bad ground, not the starter itself. Test with a voltage drop check while cranking: more than about 0.5 V lost on either the positive or ground side means a connection problem. A clicking solenoid with no cranking, a grinding noise, or a starter that keeps spinning after the engine starts all point to the starter or its drive.',
+    ],
+  },
+  airComp: {
+    title: 'Air brake compressor',
+    paras: [
+      'Trucks with air brakes need a constant supply of compressed air. The air compressor is a small one- or two-cylinder piston compressor bolted to the engine and gear-driven from the timing gear train, so it turns whenever the engine runs. It is lubricated by engine oil and usually cooled by engine coolant flowing through its head.',
+      'Air enters through reed or disc valves as the piston moves down and is pushed out through the discharge valve into a steel discharge line to the air dryer and tanks. When the tanks reach about 120 to 130 psi, the governor sends an air signal to the unloader, which holds the intake valves open so the compressor stops pumping and only freewheels. Below about 100 to 105 psi it loads up again.',
+      'A worn compressor passes engine oil into the air system, which shows up as oil in the tanks and the air dryer cartridge, and builds air slowly. Check build-up time (the FMCSA rule of thumb is 85 to 100 psi in about 45 seconds at fast idle), discharge line carbon, and unloader operation. The Air brakes page shows the whole air system the compressor feeds.',
+    ],
+  },
   egr: {
     title: 'EGR system (exhaust gas recirculation)',
     paras: [
@@ -265,7 +306,7 @@ export const ALIAS: Record<string, string> = {
   rocker: 'rockers', injector: 'injectors', commonRail: 'fuel', waterJacket: 'cooling', liner: 'liners', piston: 'pistons',
   // teardown sub-parts that deserve the full write-up
   pRing1: 'rings', pRing2: 'rings', pRing3: 'rings', pRod: 'rod', pCap: 'rod', pShells: 'mainBearings', vIntake: 'valves',
-  vExhaust: 'valves', fRail: 'fuel', injBody: 'injectors', omFilters: 'oilModule', wpStat: 'waterPump',
+  vExhaust: 'valves', fRail: 'fuel', eCooler: 'egr', eValve: 'egr', ecmBox: 'ecm', pBolts: 'rod', pClips: 'pistons', pPin: 'pistons', acpCase: 'airComp', stMotor: 'starter', aBody: 'alternator', bBelt: 'belt', injBody: 'injectors', omFilters: 'oilModule', wpStat: 'waterPump',
 };
 export function detailFor(id: string | null | undefined) {
   if (!id) return null;
