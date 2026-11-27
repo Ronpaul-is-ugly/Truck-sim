@@ -87,7 +87,9 @@ table.egSpec td:first-child{color:var(--muted);width:42%}
 .tdInspect{position:absolute;z-index:3;left:10px;top:10px;right:10px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;background:rgba(8,8,10,.82);border:1px solid #33333b;padding:8px 10px;font-size:13px}
 .tdInspect[hidden]{display:none}
 .tdInspect b{font-family:'Michroma',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
-.tdInspect label{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+.tdStepTxt{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace}
+.tdBenchBtns{display:flex;flex-wrap:wrap;gap:6px}
+.tdBenchBtns button{margin-left:0!important}
 .tdInspect button{margin-left:auto;font-size:10px;padding:5px 9px}
 .tdProg{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#c9c9cf}
 .tdProg i{display:block;height:5px;background:#16161b}.tdProg i b{display:block;height:100%;width:0;background:var(--amber);transition:width .3s}

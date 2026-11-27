@@ -22,6 +22,64 @@ export interface TeardownPart {
 
 export const TEARDOWN: TeardownPart[] = [
   {
+    id: 'belt', name: 'Accessory drive belt, tensioner and idler', needs: [],
+    does: 'One poly-V (serpentine) belt from the crankshaft pulley drives the water pump, alternator and A/C compressor. A spring-loaded automatic tensioner keeps it tight; an idler pulley guides it around the accessories.',
+    made: 'Belt: EPDM rubber with aramid or polyester cords. Tensioner: cast aluminum arm, torsion spring, sealed-bearing pulley. Idler: steel or nylon pulley on a sealed bearing.',
+    inspect: 'Belt ribs for cracks, chunks missing, glazing and rib wear (a groove gauge); tensioner arm within its wear marks and not bouncing; pulley bearings quiet and without play; pulleys lined up.',
+    removal: 'Note the belt routing (decal or photo), put a breaker bar on the tensioner to swing it off, slip the belt off the smoothest pulley, release the tensioner slowly. Unbolt the tensioner and idler.',
+    subs: [
+      { id: 'bBelt', name: 'Poly-V belt', does: 'Carries power from the crank pulley to the accessories by friction on its V-ribs.', made: 'EPDM rubber, tension cords, fabric back.' },
+      { id: 'bTensioner', name: 'Automatic tensioner', does: 'A torsion spring presses its pulley against the belt so tension stays right as the belt stretches.', made: 'Cast aluminum arm, steel spring, sealed bearing.' },
+      { id: 'bIdler', name: 'Idler pulley', does: 'Guides the belt for more wrap on the pulleys beside it.', made: 'Steel or glass-filled nylon pulley, sealed ball bearing.' },
+    ],
+  },
+  {
+    id: 'alternator', name: 'Alternator', needs: ['belt'],
+    does: 'Belt-driven generator that charges the batteries and runs the electrical system once the engine is running. Heavy trucks use 12 V alternators of 160 to 320 A.',
+    made: 'Aluminum housing, copper stator windings, rotor with slip rings, silicon diode rectifier, electronic voltage regulator.',
+    inspect: 'Charging voltage at the batteries (about 13.8 to 14.4 V), output current under load, voltage drop on the positive and ground cables, bearing noise, belt pulley condition.',
+    removal: 'Disconnect the batteries first. Remove the B+ cable and field connector, then the pivot and adjusting bolts.',
+    subs: [
+      { id: 'aBody', name: 'Alternator', does: 'Spinning magnetic rotor inside the stator makes AC; diodes turn it into DC.', made: 'Aluminum case, copper windings, diode bridge.' },
+      { id: 'aPulley', name: 'Pulley and fan', does: 'Turns the rotor; the fan pulls cooling air through the case.', made: 'Steel pulley, steel or plastic fan.' },
+      { id: 'aBracket', name: 'Mounting bracket', does: 'Holds the alternator in line with the belt.', made: 'Cast iron or aluminum.' },
+    ],
+  },
+  {
+    id: 'acComp', name: 'A/C compressor', needs: ['belt'],
+    does: 'Pumps refrigerant for the cab air conditioning. An electromagnetic clutch in the pulley engages it only when cooling is called for.',
+    made: 'Aluminum body, steel pistons and swash plate (or scroll), steel clutch plate and pulley, copper clutch coil.',
+    inspect: 'Clutch engages when commanded and the air gap is in spec; no refrigerant oil around the shaft seal; pulley bearing quiet.',
+    removal: 'The refrigerant must be recovered with a certified machine before any line is opened. Then cap the lines, unplug the clutch and unbolt it.',
+    subs: [
+      { id: 'acBody', name: 'Compressor', does: 'Compresses refrigerant vapor so it can give up heat in the condenser.', made: 'Aluminum housing, steel internals.' },
+      { id: 'acClutch', name: 'Clutch and pulley', does: 'Pulley spins all the time; the clutch plate locks to it when the coil is powered.', made: 'Steel plate and pulley, copper coil.' },
+    ],
+  },
+  {
+    id: 'ecm', name: 'Engine control module and harness', needs: [],
+    does: 'The engine computer and the wiring that ties it to every sensor and actuator: injectors, rail pressure, crank and cam position, boost, temperatures, VGT and EGR.',
+    made: 'Circuit boards in a sealed aluminum case (often fuel-cooled) on rubber isolators; harness of copper wire in convoluted nylon loom with sealed connectors.',
+    inspect: 'Power and ground at the connector under load, connector pins for corrosion or push-back, harness for chafing where it crosses brackets and hot parts.',
+    removal: 'Disconnect the batteries. Unplug the connectors (note locks and positions), unclip the harness from its brackets and lift it off with the ECM.',
+    subs: [
+      { id: 'ecmBox', name: 'ECM', does: 'Reads the sensors and decides fuel quantity, timing and rail pressure many times per second.', made: 'Aluminum case, circuit boards.' },
+      { id: 'ecmHarness', name: 'Engine harness', does: 'Carries power, ground and signals to the sensors and injectors.', made: 'Copper wire, nylon loom, sealed connectors.' },
+    ],
+  },
+  {
+    id: 'egr', name: 'EGR cooler, valve and pipes', needs: [],
+    does: 'Takes a metered amount of exhaust from the manifold, cools it in a coolant-jacketed cooler, and feeds it into the intake to lower combustion temperature and NOx.',
+    made: 'Stainless steel tube-and-shell cooler and pipes, cast valve body with an electric actuator, stainless bellows joints.',
+    inspect: 'Pressure test the cooler for internal leaks (coolant into the exhaust), soot buildup in the passages, valve moves freely through full travel, bellows not cracked.',
+    removal: 'Drain the coolant, unplug the valve actuator, remove the coolant lines and the pipe clamps, then unbolt the cooler and lift it out with the pipes.',
+    subs: [
+      { id: 'eCooler', name: 'EGR cooler', does: 'Coolant flows around tubes the exhaust passes through, cutting gas temperature from about 600 °C to 150 °C.', made: 'Stainless steel.' },
+      { id: 'eValve', name: 'EGR valve', does: 'ECM-controlled valve that sets how much exhaust is recirculated.', made: 'Cast iron or stainless body, electric actuator.' },
+      { id: 'ePipes', name: 'EGR pipes and bellows', does: 'Carry the gas from the manifold to the cooler and on to the intake; bellows take up heat growth.', made: 'Stainless steel tube and bellows.' },
+    ],
+  },
+  {
     id: 'turbo', name: 'Turbocharger', needs: [],
     does: 'Uses exhaust energy that would otherwise go out the stack. Hot exhaust spins the turbine wheel; the compressor wheel on the same shaft packs more air into the cylinders, so more fuel can be burned cleanly. A variable geometry (VGT) turbo lets the ECM change how hard the exhaust drives the turbine.',
     made: 'Turbine housing: high-silicon-molybdenum ductile iron or cast stainless steel. Turbine wheel: nickel superalloy (Inconel-type). Compressor wheel: cast or forged aluminum. Center housing: cast iron with oil and coolant passages.',
@@ -36,7 +94,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'exhaustManifold', name: 'Exhaust manifold', needs: ['turbo'],
+    id: 'exhaustManifold', name: 'Exhaust manifold', needs: ['turbo', 'egr'],
     does: 'Collects the exhaust pulses from all six cylinders and delivers them to the turbo. Split into sections with slip joints so it can grow with heat without cracking.',
     made: 'High-silicon-molybdenum (SiMo) ductile cast iron; multilayer steel gaskets; heat-resistant studs.',
     inspect: 'Cracks between ports, warped flanges (straightedge), leaking slip joints (black soot tracks), broken studs.',
@@ -48,7 +106,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'intakeManifold', name: 'Intake manifold', needs: [],
+    id: 'intakeManifold', name: 'Intake manifold', needs: ['egr'],
     does: 'Distributes cooled, compressed air from the charge air cooler evenly to all six intake ports. Often carries the boost/intake temperature sensor and the grid heater.',
     made: 'Cast aluminum (some engines use composite plastic); rubber or silicone gaskets.',
     inspect: 'Cracks, oil or soot inside (turbo seals or EGR), gasket condition, grid heater terminals.',
@@ -71,7 +129,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'fuel', name: 'Common rail, high-pressure lines and pump', needs: [],
+    id: 'fuel', name: 'Common rail, high-pressure lines and pump', needs: ['ecm'],
     does: 'The gear-driven high-pressure pump raises fuel to as much as 2,500 bar (36,000 psi). The rail stores it and feeds every injector through its own line. The ECM controls rail pressure with a sensor and a metering valve.',
     made: 'Forged steel rail and pump body; cold-drawn steel tubing for lines; hardened steel pumping plungers.',
     inspect: 'Line seats and nuts (never reuse a high-pressure line), rail pressure sensor and relief valve, pump drive gear.',
@@ -154,7 +212,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'damper', name: 'Vibration damper and pulley', needs: [],
+    id: 'damper', name: 'Vibration damper and pulley', needs: ['belt'],
     does: 'Every firing pulse twists the long crankshaft a little. The damper soaks up that torsional vibration before it can crack the crank. The pulley drives the belt.',
     made: 'Viscous damper: steel housing with an inertia ring floating in silicone fluid. Pulley: cast iron or stamped steel.',
     inspect: 'Dents (a dented viscous damper is scrap), leaking fluid, wobble, paint stripe across the ring shows slip on rubber dampers.',
@@ -165,7 +223,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'waterPump', name: 'Water pump and thermostat housing', needs: [],
+    id: 'waterPump', name: 'Water pump and thermostat housing', needs: ['belt'],
     does: 'The belt-driven impeller pushes coolant through the block, head and radiator. The thermostat stays closed until the engine is warm (about 82 °C / 180 °F) so it warms up fast, then opens to the radiator.',
     made: 'Pump: cast aluminum or iron housing, cast iron or composite impeller, sealed bearing, ceramic face seal. Thermostat: brass and steel with a wax pellet.',
     inspect: 'Weep hole seepage (seal), bearing play, impeller erosion; thermostat opening temperature in hot water.',
@@ -176,7 +234,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'frontCover', name: 'Front cover and crank seal', needs: ['damper', 'waterPump'],
+    id: 'frontCover', name: 'Front cover and crank seal', needs: ['damper', 'waterPump', 'alternator', 'acComp'],
     does: 'Closes the front of the block and holds the front crankshaft seal.',
     made: 'Cast aluminum or stamped steel; PTFE or Viton lip seal.',
     inspect: 'Seal lip wear and a groove worn in the crank nose (use a wear sleeve), cover cracks.',
@@ -198,6 +256,30 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
+    id: 'starter', name: 'Starter motor', needs: [],
+    does: 'A powerful 12 V electric motor that cranks the engine. The solenoid pushes the drive pinion into the flywheel ring gear and switches battery current to the motor.',
+    made: 'Steel case and armature, copper windings, permanent magnets or field coils, planetary gear reduction, overrunning clutch on the pinion drive.',
+    inspect: 'Cranking speed and current draw, voltage drop on the battery cable and ground while cranking, pinion teeth and ring gear teeth, solenoid contacts.',
+    removal: 'Disconnect the batteries. Remove the battery cable and the solenoid control wire, then the three mounting bolts; support it, it is heavy.',
+    subs: [
+      { id: 'stMotor', name: 'Motor', does: 'Turns battery current into high torque at low speed through a gear reduction.', made: 'Steel case, copper armature, magnets.' },
+      { id: 'stSolenoid', name: 'Solenoid', does: 'Engages the pinion and closes the heavy contacts that power the motor.', made: 'Copper coil, steel plunger, copper contacts.' },
+      { id: 'stDrive', name: 'Drive pinion and clutch', does: 'Meshes with the ring gear; a one-way clutch stops the running engine from overspeeding the starter.', made: 'Hardened steel pinion, roller clutch.' },
+    ],
+  },
+  {
+    id: 'airComp', name: 'Air brake compressor', needs: [],
+    does: 'Gear-driven piston compressor that supplies the truck\'s air brakes and air accessories. The governor unloads it once the tanks reach about 120 psi.',
+    made: 'Cast iron crankcase and cylinder, aluminum water-cooled head with reed valves, steel crankshaft and drive gear, aluminum piston.',
+    inspect: 'Build-up time from 85 to 100 psi, oil passing into the discharge line (more than a light film is too much), discharge line carbon, unloader operation, drive gear backlash.',
+    removal: 'Drain the air tanks, disconnect the discharge, governor and coolant lines and the oil supply, then unbolt it from the flywheel housing and pull it straight back off the drive.',
+    subs: [
+      { id: 'acpCase', name: 'Crankcase and cylinder', does: 'Holds the small crankshaft, rod and piston that compress the air.', made: 'Cast iron.' },
+      { id: 'acpHead', name: 'Cylinder head and valves', does: 'Reed valves let air in and out; coolant keeps the head from carboning up.', made: 'Aluminum head, steel reed valves.' },
+      { id: 'acpGear', name: 'Drive gear', does: 'Meshes with the engine gear train, so the compressor turns whenever the engine does.', made: 'Hardened steel.' },
+    ],
+  },
+  {
     id: 'flywheel', name: 'Flywheel', needs: [],
     does: 'Its weight smooths out the pulses between firing strokes. The ring gear is what the starter turns; the face is what the clutch grips.',
     made: 'Gray or nodular cast iron (some steel); shrink-fit hardened steel ring gear.',
@@ -209,7 +291,7 @@ export const TEARDOWN: TeardownPart[] = [
     ],
   },
   {
-    id: 'flywheelHousing', name: 'Flywheel housing and rear gear train', needs: ['flywheel'],
+    id: 'flywheelHousing', name: 'Flywheel housing and rear gear train', needs: ['flywheel', 'starter', 'airComp'],
     does: 'The housing bolts the engine to the transmission. Behind it, the rear gear train drives the camshaft, high-pressure pump, air compressor and oil pump from the crankshaft gear through idler gears.',
     made: 'Cast iron or aluminum housing; hardened steel helical gears.',
     inspect: 'Gear tooth wear and backlash, idler bushings, timing marks lined up, rear crank seal.',
@@ -252,10 +334,12 @@ export const TEARDOWN: TeardownPart[] = [
       { id: 'pRing1', name: 'Top compression ring', does: 'Seals combustion pressure. Takes the most heat.', made: 'Steel or ductile iron, chrome or plasma coated.' },
       { id: 'pRing2', name: 'Second ring', does: 'Backs up the top ring and scrapes oil down.', made: 'Cast iron.' },
       { id: 'pRing3', name: 'Oil control ring', does: 'Scrapes oil off the liner so it doesn\'t burn.', made: 'Steel rails with a spring expander.' },
-      { id: 'pPin', name: 'Wrist pin and clips', does: 'Pivot between piston and rod.', made: 'Case-hardened steel; spring steel clips.' },
-      { id: 'pRod', name: 'Connecting rod', does: 'Carries the push from the pin to the crank.', made: 'Forged steel (I-beam).' },
-      { id: 'pCap', name: 'Rod cap and bolts', does: 'Clamps around the crank journal. Fracture-split so it fits only one way.', made: 'Forged steel; high-strength bolts.' },
-      { id: 'pShells', name: 'Rod bearing shells', does: 'Ride on an oil film around the crank pin.', made: 'Steel back, copper-lead or aluminum lining, tin overlay.' },
+      { id: 'pClips', name: 'Wrist pin snap rings', does: 'One in a groove at each end of the pin bore, so the full-floating pin cannot slide out and score the liner. Removed with snap-ring pliers and always replaced, never reused.', made: 'Spring steel.' },
+      { id: 'pPin', name: 'Wrist pin', does: 'Pivot between piston and rod. Full-floating: it turns in both the piston bosses and the rod bushing. Pushes out by hand once both snap rings are out (warm aluminum pistons first).', made: 'Case-hardened, ground and polished alloy steel tube.' },
+      { id: 'pRod', name: 'Connecting rod', does: 'Carries the push from the pin to the crank. The small end has a bronze bushing; a drilled passage brings oil up from the crank. Rod and cap are stamped with the cylinder number on the same side.', made: 'Forged steel (I-beam), bronze small-end bushing.' },
+      { id: 'pBolts', name: 'Rod bolts', does: 'Clamp the cap to the rod. Tightened by torque plus angle, which stretches them, so most makers say to replace them every time.', made: 'High-strength alloy steel, rolled threads.' },
+      { id: 'pCap', name: 'Rod cap', does: 'Clamps the lower bearing shell around the crank pin. Fracture-split: the rough cracked faces only fit back on their own rod one way. Never swap caps between rods.', made: 'Forged steel (part of the same forging as the rod).' },
+      { id: 'pShells', name: 'Rod bearing shells', does: 'Upper half in the rod, lower half in the cap. A tang locks each into its notch. They ride on an oil film around the crank pin; their wear pattern tells you about oil, alignment and load.', made: 'Steel back, copper-lead or aluminum lining, tin or polymer overlay.' },
     ],
   },
   {
