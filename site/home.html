@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truck Sim · Heavy truck diagnostic simulators</title>
+<meta name="description" content="Browser-based simulators that teach diesel and heavy truck systems: J1939 networks, fault codes, electrical diagnosis and air brakes, all on one connected virtual truck.">
+<meta property="og:title" content="Truck Sim · Heavy truck diagnostic simulators">
+<meta property="og:description" content="Learn to diagnose a heavy truck in your browser. One connected virtual truck, real fault codes, virtual scan tool and multimeter.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Titillium+Web:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./home.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="brand" href="/">
+      <span class="blocks"><i style="background:#ff3b30"></i><i style="background:#f5a623"></i><i style="background:#3b8fd9"></i><i style="background:#e6e6e9"></i><i style="background:#69db7c"></i></span>
+      <span class="name">Truck Sim</span>
+    </a>
+    <nav class="links">
+      <a href="#systems">Systems</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a class="btn sm" href="/simulator.html">Open the simulator</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap hero-in">
+    <div class="hero-copy">
+      <p class="eyebrow">Diesel &amp; heavy truck technician training</p>
+      <h1>Learn to diagnose a heavy truck before you touch one.</h1>
+      <p class="lede">A virtual truck that runs in your browser. Inject a fault, watch it ripple through the CAN network, the dash and the air system, then track it down with a scan tool and a multimeter the way you would in the shop.</p>
+      <div class="cta">
+        <a class="btn" href="/simulator.html">Try it free, no sign-up</a>
+        <a class="btn ghost" href="#schools">For schools</a>
+      </div>
+      <p class="fine">Works on Chromebooks, laptops and tablets. Nothing to install.</p>
+    </div>
+    <figure class="shot hero-shot">
+      <img src="./img/network.jpg" width="1284" height="516" alt="The simulator's J1939 network diagram with the engine ECM, aftertreatment, transmission, ABS and instrument cluster on one CAN backbone, next to a live instrument cluster.">
+    </figure>
+  </div>
+</section>
+
+<section class="strip">
+  <div class="wrap strip-in">
+    <div><b>One truck</b><span>Every system shares the same engine, wiring and air supply</span></div>
+    <div><b>Real codes</b><span>SPN / FMI fault codes encoded and broadcast like a real J1939 bus</span></div>
+    <div><b>Shop tools</b><span>Scan tool, multimeter, bus monitor, master air gauge</span></div>
+    <div><b>Any browser</b><span>No headset, trainer stand or install</span></div>
+  </div>
+</section>
+
+<section id="systems" class="sec">
+  <div class="wrap">
+    <h2 class="h"><i style="background:#69db7c"></i>What it teaches</h2>
+    <p class="sec-lede">Each simulator is a system on the same virtual truck, so a fault in one shows up in the others.</p>
+    <div class="grid sys">
+      <article class="card" style="--c:#3b8fd9">
+        <span class="tag live">Available now</span>
+        <h3>J1939 network &amp; fault codes</h3>
+        <p>How CAN works, what each wire should read, opens and shorts, termination, and how modules report faults. Inject a fault on any sensor or wire, then read it in DM1 and track it down.</p>
+      </article>
+      <article class="card" style="--c:#69db7c">
+        <span class="tag live">Available now</span>
+        <h3>Air brakes</h3>
+        <p>Compressor, governor, dryer, tanks, dual-circuit foot valve, relay valve and spring brakes, all modeled. Run the full air brake check and find 14 mystery faults from leaks to brakes out of adjustment.</p>
+      </article>
+      <article class="card" style="--c:#f5a623">
+        <span class="tag live">Available now</span>
+        <h3>Electrical diagnosis</h3>
+        <p>Use a virtual multimeter on sensor circuits, 5 V references, the battery and the CAN pair. Learn what a good reading looks like before you go looking for a bad one.</p>
+      </article>
+      <article class="card" style="--c:#ff3b30">
+        <span class="tag soon">Coming next</span>
+        <h3>Engine fundamentals</h3>
+        <p>Air intake and turbo, fuel injection, cooling, lubrication and aftertreatment (DPF, SCR, DEF), tied to the ECM and its sensors.</p>
+      </article>
+      <article class="card" style="--c:#e6e6e9">
+        <span class="tag soon">Coming next</span>
+        <h3>Powertrain</h3>
+        <p>Clutch, manual and automated transmissions, driveline, differentials and axles.</p>
+      </article>
+      <article class="card" style="--c:#6fd3ff">
+        <span class="tag soon">Coming next</span>
+        <h3>Suspension &amp; steering</h3>
+        <p>Leaf spring and air ride, leveling valves, steering and alignment basics.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="sec alt">
+  <div class="wrap">
+    <h2 class="h"><i style="background:#f5a623"></i>How it works</h2>
+    <div class="how">
+      <ol class="steps">
+        <li><b>Run the truck.</b> Key on, start the engine, set a road speed and load. Gauges, lamps and network traffic all respond.</li>
+        <li><b>Break something.</b> An instructor (or the simulator) injects a fault: a shorted sensor, an open CAN wire, an air leak, a stuck governor.</li>
+        <li><b>Diagnose it.</b> Read codes and live data on the scan tool, probe circuits with the multimeter, run the air brake check with a stopwatch.</li>
+        <li><b>Learn from the path.</b> Every action is logged and replayable, so a student can see what they tested, in what order, and what a faster path would have been.</li>
+      </ol>
+      <figure class="shot">
+        <img src="./img/air-brakes.jpg" width="1284" height="716" loading="lazy" alt="The air brake simulator: engine-driven compressor, governor, dryer, supply, primary and secondary tanks, foot valve, relay valve and brake chambers, with a dash air gauge reading 118 psi.">
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="schools" class="sec">
+  <div class="wrap two">
+    <div>
+      <h2 class="h"><i style="background:#3b8fd9"></i>For schools</h2>
+      <p>Hands-on diagnosis without a trainer stand for every student. Students can practice at home on a Chromebook, and every truck behaves the same, so a class can work the same fault at the same time.</p>
+      <ul class="ticks">
+        <li>Instructor fault injection and assigned scenarios</li>
+        <li>Diagnostic steps logged for every student</li>
+        <li>Lessons mapped to ASE Education Foundation MHT tasks (in progress)</li>
+        <li>Per-seat licenses, priced well below VR and hardware trainers</li>
+      </ul>
+    </div>
+    <div>
+      <h2 class="h"><i style="background:#69db7c"></i>For individuals</h2>
+      <p>Career changers, apprentices and working techs who want to get faster at electrical and network diagnosis. Start free, practice as long as you like, and pick up the systems you don't see every day.</p>
+      <ul class="ticks">
+        <li>Free to try, no account needed</li>
+        <li>Realistic codes, voltages and pressures</li>
+        <li>Learn on your phone, tablet or laptop</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="sec alt">
+  <div class="wrap">
+    <h2 class="h"><i style="background:#ff3b30"></i>Pricing</h2>
+    <div class="grid price">
+      <article class="card plan">
+        <h3>Free</h3>
+        <p class="amt">$0</p>
+        <ul class="ticks">
+          <li>J1939 network &amp; fault code simulator</li>
+          <li>Air brake simulator</li>
+          <li>Scan tool, multimeter and bus monitor</li>
+        </ul>
+        <a class="btn" href="/simulator.html">Open the simulator</a>
+      </article>
+      <article class="card plan">
+        <h3>Individual</h3>
+        <p class="amt">Coming soon</p>
+        <ul class="ticks">
+          <li>Every simulator as it is released</li>
+          <li>Guided lessons and quizzes</li>
+          <li>Saved progress and scored diagnostic scenarios</li>
+        </ul>
+        <a class="btn ghost" data-contact="Individual plan waitlist" href="/simulator.html">Join the waitlist</a>
+      </article>
+      <article class="card plan feat">
+        <h3>Schools</h3>
+        <p class="amt">Seat licenses</p>
+        <ul class="ticks">
+          <li>Everything in Individual</li>
+          <li>Instructor controls and class dashboard</li>
+          <li>Pilot program for diesel and truck tech programs</li>
+        </ul>
+        <a class="btn" data-contact="School pilot" href="/simulator.html">Request a pilot</a>
+      </article>
+    </div>
+    <p class="fine center">The free simulators stay free.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <h2 class="h"><i style="background:#e6e6e9"></i>Questions</h2>
+    <div class="faq">
+      <details><summary>Do I need to install anything?</summary><p>No. It runs in any modern browser, including school Chromebooks. A phone works too, though a tablet or laptop gives you room for the diagrams.</p></details>
+      <details><summary>Is it a specific make of truck?</summary><p>It is a generic heavy truck with a common engine, J1939 network and dual-circuit air brakes. Codes and specs follow the J1939 standard and typical heavy truck values rather than one brand's software.</p></details>
+      <details><summary>Who is it for?</summary><p>Diesel and truck technology students, apprentices, career changers and working techs who want more practice with electrical, network and air brake diagnosis.</p></details>
+      <details><summary>Does it replace shop time?</summary><p>No. It lets students arrive in the shop already knowing what a good reading looks like and how to work a fault, so shop time goes further.</p></details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="blocks"><i style="background:#ff3b30"></i><i style="background:#f5a623"></i><i style="background:#3b8fd9"></i><i style="background:#e6e6e9"></i><i style="background:#69db7c"></i></span>
+    <span>Truck Sim · heavy truck diagnostic simulators</span>
+    <a href="/simulator.html">Open the simulator</a>
+  </div>
+</footer>
+
+<script type="module" src="./home.ts"></script>
+</body>
+</html>
