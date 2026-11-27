@@ -1,0 +1,12 @@
+{
+  "id": "open-coolant-thermistor",
+  "title": "Coolant gauge reads wrong",
+  "complaint": "Coolant gauge reads wrong, fan runs all the time",
+  "description": "The coolant temperature signal wire is broken in the main engine harness. The ECM's pull-up makes the open read about 5 V (about −40 °C) and it sets SPN 110 FMI 3.",
+  "seed": 110,
+  "initial": { "key": "run", "speedMph": 0, "driver": { "setMph": 0 } },
+  "faults": [{ "part": "ect.sig@s1", "kind": "open" }],
+  "answer": { "circuit": "ect", "location": "s1", "kind": "open", "wire": "sig" },
+  "laborBudgetMin": 75,
+  "expect": { "afterMs": 4000, "activeCodes": [{ "ecu": "ecm", "spn": 110, "fmi": 3 }] }
+}

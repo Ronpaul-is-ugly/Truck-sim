@@ -1,0 +1,10 @@
+{
+  "id": "low-oil-pressure-real",
+  "title": "Red STOP lamp",
+  "complaint": "Red STOP lamp, low oil pressure warning",
+  "description": "Fuel-diluted oil: real low oil pressure. The sensor and wiring are good; a mechanical gauge confirms it. The ECM sets SPN 100 FMI 1 and derates to 45 mph.",
+  "seed": 100,
+  "presets": [{ "cid": "oilp", "key": "low" }],
+  "answer": { "circuit": "oilp", "location": "mech", "kind": "mech", "cause": "Real low oil pressure (fuel-diluted oil)" },
+  "expect": { "afterMs": 4000, "activeCodes": [{ "ecu": "ecm", "spn": 100, "fmi": 1 }] }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "shared-5v-supply-short",
+  "title": "Several engine sensors lost at once",
+  "complaint": "Low power, MIL on, and several engine codes all set at the same moment",
+  "description": "The MAP sensor's 5 V reference is chafed to ground. That pulls down 5 V supply 1, so MAP, rail pressure, throttle and EGR position all lose their reference. The ECM sets SPN 3509 FMI 4.",
+  "seed": 3509,
+  "faults": [{ "part": "map.ref@s1", "kind": "shortToGround", "value": 0.05 }],
+  "answer": { "circuit": "map", "location": "s1", "kind": "gnd", "wire": "ref" },
+  "laborBudgetMin": 120,
+  "expect": { "afterMs": 4000, "activeCodes": [{ "ecu": "ecm", "spn": 3509, "fmi": 4 }] }
+}

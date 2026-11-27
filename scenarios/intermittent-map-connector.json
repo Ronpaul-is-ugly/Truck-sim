@@ -1,0 +1,10 @@
+{
+  "id": "intermittent-map-connector",
+  "title": "Intermittent low power",
+  "complaint": "Low power comes and goes, MIL on",
+  "description": "A loose MAP sensor terminal opens the signal now and then. The ECM sees the reading drop in and out and sets SPN 102 FMI 2 (erratic). A wiggle test on connector 1 makes it worse.",
+  "seed": 102,
+  "faults": [{ "part": "map.sig@c1", "kind": "open", "intermittent": { "dutyPct": 20, "meanOnMs": 300 } }],
+  "answer": { "circuit": "map", "location": "c1", "kind": "intermittent", "wire": "sig" },
+  "expect": { "afterMs": 30000, "activeCodes": [{ "ecu": "ecm", "spn": 102, "fmi": 2 }] }
+}
