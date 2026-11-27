@@ -37,5 +37,5 @@ npx vite preview --config vite.site.config.ts   # look at it locally
 
 ## After the domain exists
 
-- Set `CONTACT_EMAIL` in `site/home.ts` so the waitlist and school pilot buttons open an email.
-- Replace the working name "Truck Sim" in `site/home.html` and `public/404.html` once a product name is chosen.
+- The contact address is `CONTACT_EMAIL` in `site/home.ts` (waitlist and school pilot buttons) and the footer of `site/home.html`.
+- "Tek Simulator" is a working name, used in `site/home.html`, `site/home.ts` and `public/404.html`.
