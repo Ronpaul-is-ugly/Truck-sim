@@ -1,5 +1,10 @@
 # Website and hosting
 
+**Live hosting: Cloudflare Workers (`truck-sim-1`).** `wrangler.jsonc` serves `dist/` as static assets.
+In the Worker's **Settings → Build**, connect the GitHub repo and use build command `npm run build:site`
+and deploy command `npx wrangler deploy` (root directory `/`, branch `main`).
+The Pages instructions below also work if you ever switch to Pages.
+
 The public site is a static build: a landing page at `/` and the simulator at `/simulator`.
 It is set up for **Cloudflare Pages** (free tier, unlimited bandwidth, automatic HTTPS).
 
