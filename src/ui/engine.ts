@@ -4,6 +4,8 @@
 // read, and the mystery faults set real J1939 codes. This file only draws and dispatches actions; the
 // physics lives in src/engine/physics/enginemech.ts.
 import './engine.css';
+import { mountCycle } from './engine-cycle';
+import { mountTiming } from './engine-timing';
 import {
   ENGINE_SPEC, ENGINE_CHECKS, ENGINE_COMPONENTS, ENGINE_QUIZ, ENGINE_FAULTS, displacementL, cylinderPressure, cycleForCylinder, cylinderAngle,
   strokeAt, valveLift, pistonFromTdcMm, airTempC, type SimEngine, type EngineFault, type EngineCheck, type Stroke,
@@ -40,32 +42,8 @@ const U = {
 // ---------------- markup ----------------
 const sec = $('sec-engine');
 sec.innerHTML = `
-<section class="panel" style="--c:#ff3b30">
-  <h2>Four-stroke cycle · compression ignition · same truck, same engine</h2>
-  <div class="egCycle">
-    <svg id="egCyl" viewBox="0 0 360 600" role="img" aria-label="Animated cutaway of one cylinder"></svg>
-    <div>
-      <div class="egStroke" id="egStroke">Intake</div>
-      <div id="egExplain" style="min-height:96px"></div>
-      <div class="egRead">
-        <div><span>Crank angle</span><b id="egAng">0°</b></div>
-        <div><span>Piston from TDC</span><b id="egPos">0 mm</b></div>
-        <div><span>Cylinder pressure</span><b id="egP">0 psi</b></div>
-        <div><span>Air temperature</span><b id="egT">0 °C</b></div>
-      </div>
-      <div class="egCtl">
-        <button id="egPlay" class="dark">Pause</button>
-        <span class="seg" id="egSpeed"><button data-s="15">Slow</button><button data-s="45" class="on">Medium</button><button data-s="180">Fast</button></span>
-        <button id="egBack">−10°</button><button id="egFwd">+10°</button>
-        <span class="seg" id="egJump"><button data-j="90">Intake</button><button data-j="270">Compress</button><button data-j="352">Inject</button><button data-j="400">Power</button><button data-j="630">Exhaust</button></span>
-      </div>
-      <div class="note" id="egSpeedNote"></div>
-      <svg id="egChart" viewBox="0 0 720 230" role="img" aria-label="Cylinder pressure against crank angle"></svg>
-      <div class="note">Pressure in the selected cylinder over one full cycle (720°, two turns of the crank). Pick a cylinder below: they all run the same cycle, 120° apart, in firing order ${FIRING.join('-')}.</div>
-      <div class="egSix" id="egSix"></div>
-    </div>
-  </div>
-</section>
+<section class="panel" style="--c:#ff3b30" id="egCyclePanel"></section>
+<section class="panel" style="--c:#b07aff" id="egTimingPanel"></section>
 <div class="row r2">
   <section class="panel" style="--c:#f5a623">
     <h2>Engine construction · parts explorer</h2>
@@ -123,224 +101,9 @@ function txt(parent: Element, x: number, y: number, s: string, attrs: Record<str
   return t;
 }
 
-// ---------------- one-cylinder cutaway ----------------
-const cylSvg = $('egCyl') as unknown as SVGSVGElement;
-const K = 150 / ENGINE_SPEC.strokeMm; // px per mm
-const CX = 180, CY = 510, R = (ENGINE_SPEC.strokeMm / 2) * K, L = ENGINE_SPEC.rodMm * K, DECK = 150, PIN = 40, TOP_TDC = 158;
-// block, water jacket, head
-el(cylSvg, 'rect', { x: 70, y: DECK, width: 220, height: 245, fill: '#16161b' });
-el(cylSvg, 'rect', { x: 84, y: DECK + 10, width: 14, height: 170, fill: '#123048' });
-el(cylSvg, 'rect', { x: 262, y: DECK + 10, width: 14, height: 170, fill: '#123048' });
-el(cylSvg, 'rect', { x: 101, y: DECK, width: 158, height: 245, fill: '#0b0b0e' }); // bore
-el(cylSvg, 'rect', { x: 98, y: DECK, width: 3, height: 245, fill: '#3a3a44' });
-el(cylSvg, 'rect', { x: 259, y: DECK, width: 3, height: 245, fill: '#3a3a44' });
-el(cylSvg, 'path', { d: `M60 ${DECK} V60 H300 V${DECK} H262 V${DECK - 6} H98 V${DECK} Z`, fill: '#1b1b21', stroke: '#33333b' });
-// ports
-el(cylSvg, 'path', { d: 'M0 88 H100 Q122 92 122 130 L148 130 Q146 70 100 64 H0 Z', fill: '#0f2533' });
-el(cylSvg, 'path', { d: 'M360 88 H262 Q238 92 238 130 L212 130 Q214 70 262 64 H360 Z', fill: '#262628' });
-txt(cylSvg, 6, 58, 'AIR IN', { fill: '#6fd3ff', 'font-size': 10 });
-txt(cylSvg, 300, 58, 'EXHAUST', { fill: '#b0b0b8', 'font-size': 10 });
-const gas = el(cylSvg, 'rect', { x: 101, y: DECK, width: 158, height: 10, fill: '#6fd3ff', opacity: 0.18 });
-const flame = el(cylSvg, 'ellipse', { cx: CX, cy: DECK + 14, rx: 70, ry: 16, fill: '#ff7a1a', opacity: 0 });
-// valves
-function valve(x: number) {
-  const g = el(cylSvg, 'g', {});
-  el(g, 'rect', { x: x - 3, y: 40, width: 6, height: 104, fill: '#9a9aa3' });
-  el(g, 'path', { d: `M${x - 22} ${DECK} L${x - 4} ${DECK - 10} H${x + 4} L${x + 22} ${DECK} Z`, fill: '#c9c9cf' });
-  el(g, 'rect', { x: x - 9, y: 26, width: 18, height: 14, fill: '#5a5a63' });
-  return g;
-}
-const vIn = valve(135), vEx = valve(225);
-txt(cylSvg, 112, 20, 'INTAKE', { 'font-size': 9 });
-txt(cylSvg, 205, 20, 'EXHAUST', { 'font-size': 9 });
-// injector and spray
-el(cylSvg, 'rect', { x: CX - 7, y: 12, width: 14, height: 128, fill: '#4b4b55', stroke: '#6a6a74' });
-el(cylSvg, 'path', { d: `M${CX - 5} 140 L${CX} ${DECK - 2} L${CX + 5} 140 Z`, fill: '#6a6a74' });
-txt(cylSvg, CX + 10, 10, 'INJECTOR', { 'font-size': 9, 'text-anchor': 'middle' });
-const spray = el(cylSvg, 'g', { opacity: 0 });
-for (const a of [-55, -28, 0, 28, 55]) {
-  const r = (a * Math.PI) / 180;
-  el(spray, 'line', { x1: CX, y1: DECK - 1, x2: CX + Math.sin(r) * 60, y2: DECK + Math.cos(r) * 18, stroke: '#f5e663', 'stroke-width': 2.2, 'stroke-dasharray': '3 2' });
-}
-// crankcase and crank
-el(cylSvg, 'path', { d: `M70 ${DECK + 245} H290 L320 590 H40 Z`, fill: '#121216' });
-const crankG = el(cylSvg, 'g', {});
-el(crankG, 'circle', { cx: CX, cy: CY, r: 62, fill: '#24242b', stroke: '#3a3a44' });
-el(crankG, 'path', { d: `M${CX - 60} ${CY + 8} A60 60 0 0 0 ${CX + 60} ${CY + 8} Z`, fill: '#33333b' }); // counterweight (opposite the pin)
-el(crankG, 'circle', { cx: CX, cy: CY, r: 10, fill: '#55555f' });
-const rod = el(cylSvg, 'line', { x1: CX, y1: 0, x2: CX, y2: 0, stroke: '#a8a8b2', 'stroke-width': 16, 'stroke-linecap': 'round' });
-const crankPin = el(cylSvg, 'circle', { cx: CX, cy: CY, r: 13, fill: '#c9c9cf' });
-const piston = el(cylSvg, 'g', {});
-el(piston, 'path', { d: 'M103 0 H257 V70 H103 Z M150 0 Q180 18 210 0 Z', fill: '#b5b5be', 'fill-rule': 'evenodd' });
-for (const y of [8, 15, 24]) el(piston, 'rect', { x: 103, y, width: 154, height: 3, fill: '#55555f' });
-el(piston, 'circle', { cx: CX, cy: PIN, r: 9, fill: '#55555f' });
-txt(cylSvg, 300, 470, 'CRANK', { 'font-size': 9 });
-txt(cylSvg, 6, 470, 'ROD', { 'font-size': 9 });
-const tdcMark = txt(cylSvg, 300, TOP_TDC + 4, '◄ TDC', { 'font-size': 9 });
-txt(cylSvg, 300, TOP_TDC + 154, '◄ BDC', { 'font-size': 9 });
-void tdcMark;
-const flowIn = el(cylSvg, 'path', { d: 'M20 108 H95 l-8 -6 m8 6 l-8 6', stroke: '#6fd3ff', 'stroke-width': 3, fill: 'none', opacity: 0 });
-const flowEx = el(cylSvg, 'path', { d: 'M265 108 H340 l-8 -6 m8 6 l-8 6', stroke: '#b0b0b8', 'stroke-width': 3, fill: 'none', opacity: 0 });
-
-function drawCylinder(theta: number, p: number, cyc: ReturnType<typeof cycleForCylinder>) {
-  const a = ((theta % 360) * Math.PI) / 180;
-  const pinY = CY - (R * Math.cos(a) + Math.sqrt(L * L - (R * Math.sin(a)) ** 2));
-  const top = pinY - PIN;
-  piston.setAttribute('transform', `translate(0 ${top})`);
-  const cpx = CX + R * Math.sin(a), cpy = CY - R * Math.cos(a);
-  rod.setAttribute('x1', String(CX)); rod.setAttribute('y1', String(pinY));
-  rod.setAttribute('x2', String(cpx)); rod.setAttribute('y2', String(cpy));
-  crankPin.setAttribute('cx', String(cpx)); crankPin.setAttribute('cy', String(cpy));
-  crankG.setAttribute('transform', `rotate(${theta % 360} ${CX} ${CY})`);
-  const li = valveLift(theta, 'intake'), le = valveLift(theta, 'exhaust');
-  vIn.setAttribute('transform', `translate(0 ${li * 18})`);
-  vEx.setAttribute('transform', `translate(0 ${le * 18})`);
-  flowIn.setAttribute('opacity', String(li > 0.05 ? 0.4 + 0.6 * li : 0));
-  flowEx.setAttribute('opacity', String(le > 0.05 ? 0.4 + 0.6 * le : 0));
-  gas.setAttribute('height', String(Math.max(2, top - DECK)));
-  const st = strokeAt(theta);
-  const hot = st === 'compression' ? Math.max(0, (theta - 180) / 180) : 0;
-  const col = st === 'intake' ? '#6fd3ff' : st === 'compression' ? `rgb(${111 + 140 * hot},${211 - 90 * hot},${255 - 220 * hot})` : st === 'power' ? '#ff5a1a' : '#8a8a93';
-  gas.setAttribute('fill', col);
-  gas.setAttribute('opacity', String(st === 'power' ? 0.15 + Math.min(0.5, p / 4000) : 0.2 + 0.25 * hot));
-  const inj = cyc.fuel > 0 && theta >= 360 - ENGINE_SPEC.injectionBtdc && theta < 374;
-  spray.setAttribute('opacity', inj ? '1' : '0');
-  const burn = cyc.fuel > 0 && theta >= 358 && theta < 440 ? Math.max(0, 1 - (theta - 366) / 74) : 0;
-  flame.setAttribute('cy', String((DECK + top) / 2));
-  flame.setAttribute('ry', String(Math.max(4, (top - DECK) / 2)));
-  flame.setAttribute('opacity', String(Math.min(0.85, burn)));
-}
-
-// ---------------- pressure chart ----------------
-const chart = $('egChart') as unknown as SVGSVGElement;
-const CX0 = 44, CX1 = 712, CY0 = 205, CY1 = 14;
-const xOf = (t: number) => CX0 + ((CX1 - CX0) * t) / 720;
-for (const [i, s] of (['intake', 'compression', 'power', 'exhaust'] as Stroke[]).entries()) {
-  el(chart, 'rect', { x: xOf(i * 180), y: CY1, width: xOf(180) - CX0, height: CY0 - CY1, fill: STROKE_COL[s], opacity: 0.05 });
-  txt(chart, xOf(i * 180 + 90), 226, s.toUpperCase(), { 'text-anchor': 'middle', fill: STROKE_COL[s], 'font-size': 10 });
-}
-for (const t of [0, 180, 360, 540, 720]) {
-  el(chart, 'line', { x1: xOf(t), y1: CY1, x2: xOf(t), y2: CY0, stroke: '#24242a' });
-  txt(chart, xOf(t), CY0 + 11, t === 360 ? 'TDC 360°' : t === 0 || t === 720 ? 'TDC' : 'BDC', { 'text-anchor': 'middle', 'font-size': 9 });
-}
-el(chart, 'line', { x1: CX0, y1: CY0, x2: CX1, y2: CY0, stroke: '#33333b' });
-const yLabels = [0, 1, 2, 3].map((i) => txt(chart, CX0 - 4, 0, '', { 'text-anchor': 'end', 'font-size': 9 }));
-const yLines = [0, 1, 2, 3].map(() => el(chart, 'line', { x1: CX0, y1: 0, x2: CX1, y2: 0, stroke: '#1a1a20' }));
-const trace = el(chart, 'path', { d: '', stroke: '#e6e6e9', 'stroke-width': 2, fill: 'none' });
-const traceRef = el(chart, 'path', { d: '', stroke: '#69db7c', 'stroke-width': 1, fill: 'none', 'stroke-dasharray': '4 3', opacity: 0.6 });
-const dot = el(chart, 'circle', { r: 5, fill: '#ff3b30' });
-const chartNote = txt(chart, CX1 - 4, CY1 + 12, '', { 'text-anchor': 'end', 'font-size': 10, fill: '#c9c9cf' });
-let chartKey = '';
-let yMax = 1000;
-const yOf = (p: number) => CY0 - ((CY0 - CY1) * p) / yMax;
-function drawChart(cyc: ReturnType<typeof cycleForCylinder>, healthySeal: boolean) {
-  const key = `${cyc.intakePsiA.toFixed(0)}|${cyc.sealing.toFixed(2)}|${cyc.fuel.toFixed(2)}`;
-  if (key === chartKey) return;
-  chartKey = key;
-  const pts: number[] = [];
-  for (let t = 0; t <= 720; t += 2) pts.push(cylinderPressure(t, cyc) - 14.7);
-  const ref = healthySeal ? null : Array.from({ length: 361 }, (_, i) => cylinderPressure(i * 2, { ...cyc, sealing: 1 }) - 14.7);
-  const peak = Math.max(...pts, ...(ref ?? []));
-  yMax = Math.max(800, Math.ceil((peak * 1.1) / 500) * 500);
-  const step = yMax / 4;
-  yLabels.forEach((t, i) => { const v = step * (i + 1); t.setAttribute('y', String(yOf(v) + 3)); t.textContent = `${v}`; });
-  yLines.forEach((l, i) => { const v = yOf(step * (i + 1)); l.setAttribute('y1', String(v)); l.setAttribute('y2', String(v)); });
-  const path = (arr: number[]) => arr.map((p, i) => `${i ? 'L' : 'M'}${xOf(i * 2).toFixed(1)} ${yOf(Math.max(0, p)).toFixed(1)}`).join(' ');
-  trace.setAttribute('d', path(pts));
-  traceRef.setAttribute('d', ref ? path(ref) : '');
-  chartNote.textContent = `psi gauge · peak ${Math.round(Math.max(...pts))} psi${ref ? ` · dashed: a healthy cylinder (${Math.round(Math.max(...ref))} psi)` : ''}`;
-}
-
-// ---------------- six cylinders ----------------
-$('egSix').innerHTML = [1, 2, 3, 4, 5, 6].map((n) => `<button data-c="${n}"><i><em></em></i>#${n}<small></small></button>`).join('');
-$('egSix').addEventListener('click', (ev) => {
-  const b = (ev.target as HTMLElement).closest('button[data-c]') as HTMLElement | null;
-  if (!b) return;
-  U.cyl = +b.dataset.c!;
-  chartKey = '';
-  frame(0);
-});
-
-const EXPLAIN: Record<Stroke, (theta: number, tC: number) => string> = {
-  intake: () => `The piston moves <b>down</b> with the intake valve open, drawing in air (pushed in by the turbo when the engine is loaded). A diesel takes in <b>only air</b>: no throttle plate limits it, and there is no fuel yet. The exhaust valve closed just after TDC; for a moment both valves were open (<b>overlap</b>) to sweep the chamber clean.`,
-  compression: (t, tC) => `Both valves are shut and the piston moves <b>up</b>, squeezing the air to about 1/${ENGINE_SPEC.compressionRatio} of its volume. Squeezing it heats it: <b>${Math.round(tC)} °C</b> now${t > 330 ? `, far above diesel fuel's self-ignition temperature (about 210–250 °C)` : ''}. ${t >= 360 - ENGINE_SPEC.injectionBtdc ? '<b>Injection starts</b> a few degrees before TDC: fuel at up to 2,000 bar sprays into the hot air and lights on its own. That is <b>compression ignition</b>: no spark plug.' : 'This is why a diesel needs high compression and good rings and valves: lose the squeeze and the air never gets hot enough.'}`,
-  power: (t) => t < 380
-    ? 'The fuel burns as it is injected and the pressure jumps. Peak pressure comes just <b>after</b> TDC, so it pushes the piston down instead of fighting it. The rod turns the push into crankshaft torque.'
-    : 'Expanding gas drives the piston <b>down</b>: the only stroke that makes power. The other three are paid for by the flywheel and the other cylinders. Near the bottom the exhaust valve starts to open and the pressure blows down into the exhaust manifold.',
-  exhaust: () => 'The exhaust valve is open and the piston moves <b>up</b>, pushing the burned gas out to the turbo\'s turbine, which uses that energy to drive the compressor. Near TDC the intake valve starts to open again for the next cycle.',
-};
-
-// ---------------- animation loop ----------------
-let lastNow = 0;
-function frame(now: number) {
-  const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0;
-  lastNow = now;
-  if (U.playing) U.phi = (U.phi + U.speed * dt) % 720;
-  const e = eng();
-  if (!e || !sec.classList.contains('on')) return;
-  const s = e.state;
-  const theta = cylinderAngle(U.phi, U.cyl);
-  const cyc = cycleForCylinder(s, U.cyl);
-  const p = cylinderPressure(theta, cyc) - 14.7;
-  drawCylinder(theta, p, cyc);
-  drawChart(cyc, cyc.sealing > 0.97);
-  dot.setAttribute('cx', String(xOf(theta)));
-  dot.setAttribute('cy', String(yOf(Math.max(0, p))));
-  const st = strokeAt(theta);
-  const tC = airTempC(theta, s.running ? s.intakeTempC : s.ambientC, cyc.sealing);
-  $('egStroke').innerHTML = `<span style="color:${STROKE_COL[st]}">${st}</span><small>cylinder ${U.cyl} · ${Math.round(theta)}° of 720°</small>`;
-  $('egExplain').innerHTML = EXPLAIN[st](theta, tC);
-  $('egAng').textContent = `${Math.round(theta)}°`;
-  $('egPos').textContent = `${pistonFromTdcMm(theta).toFixed(0)} mm`;
-  $('egP').textContent = `${Math.max(0, Math.round(p))} psi`;
-  $('egT').textContent = st === 'power' && cyc.fuel > 0 && theta < 450 ? 'burning' : `${Math.round(tC)} °C`;
-  document.querySelectorAll<HTMLElement>('#egSix button').forEach((b) => {
-    const n = +b.dataset.c!;
-    const t = cylinderAngle(U.phi, n);
-    const sk = strokeAt(t);
-    b.classList.toggle('on', n === U.cyl);
-    const em = b.querySelector('em') as HTMLElement;
-    em.style.top = `${2 + (pistonFromTdcMm(t) / ENGINE_SPEC.strokeMm) * 20}px`;
-    em.style.background = STROKE_COL[sk];
-    (b.querySelector('small') as HTMLElement).textContent = sk === 'power' && t < 400 ? 'FIRING' : sk;
-    (b.querySelector('small') as HTMLElement).style.color = STROKE_COL[sk];
-  });
-  const rpm = s.rpm;
-  $('egSpeedNote').innerHTML = s.running
-    ? `The truck's engine is running at <b>${Math.round(rpm)} rpm</b>: a full cycle takes ${(120000 / rpm).toFixed(0)} ms and each cylinder fires ${(rpm / 120).toFixed(1)} times a second. This animation is about ${Math.round((rpm * 6) / U.speed)} times slower. Boost, fuel and the cylinder's condition come from the live truck.`
-    : 'Engine stopped: the cylinder is shown being turned over without fuel (cranking), so there is compression but no combustion. Start the engine in the Engine shop below to see it fire.';
-}
-function loop(now: number) {
-  requestAnimationFrame(loop);
-  frame(now);
-}
-requestAnimationFrame(loop);
-$('egPlay').addEventListener('click', () => {
-  U.playing = !U.playing;
-  $('egPlay').textContent = U.playing ? 'Pause' : 'Play';
-});
-$('egSpeed').addEventListener('click', (ev) => {
-  const b = (ev.target as HTMLElement).closest('button[data-s]') as HTMLElement | null;
-  if (!b) return;
-  U.speed = +b.dataset.s!;
-  document.querySelectorAll('#egSpeed button').forEach((x) => x.classList.toggle('on', x === b));
-});
-const nudge = (d: number) => {
-  U.phi = (U.phi + d + 720) % 720;
-  frame(performance.now());
-};
-$('egBack').addEventListener('click', () => nudge(-10));
-$('egFwd').addEventListener('click', () => nudge(10));
-$('egJump').addEventListener('click', (ev) => {
-  const b = (ev.target as HTMLElement).closest('button[data-j]') as HTMLElement | null;
-  if (!b) return;
-  // put the selected cylinder at that angle
-  const k = FIRING.indexOf(U.cyl);
-  U.phi = (+b.dataset.j! + 120 * k) % 720;
-  U.playing = false;
-  $('egPlay').textContent = 'Play';
-  frame(performance.now());
-});
+// ---------------- four-stroke cycle and companion / cam timing ----------------
+mountCycle($('egCyclePanel'));
+mountTiming($('egTimingPanel'));
 
 // ---------------- parts explorer ----------------
 const ps = $('egPartsSvg') as unknown as SVGSVGElement;
