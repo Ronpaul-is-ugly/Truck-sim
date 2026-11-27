@@ -1,0 +1,9 @@
+{
+  "id": "tcm-stub-open",
+  "title": "Speedometer drops out",
+  "complaint": "Speedometer goes to dashes and the transmission won't shift",
+  "description": "The TCM's stub to the J1939 backbone is open. Its ETC1 frames stop, so the ECM can't calculate road speed. ECM and TCM both log SPN 639 FMI 9.",
+  "seed": 639,
+  "faults": [{ "part": "can.stub.tcm", "kind": "open" }],
+  "expect": { "afterMs": 4000, "activeCodes": [{ "ecu": "ecm", "spn": 639, "fmi": 9 }, { "ecu": "tcm", "spn": 639, "fmi": 9 }] }
+}

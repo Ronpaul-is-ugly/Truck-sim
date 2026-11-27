@@ -1,0 +1,23 @@
+// Public API of the simulation engine. No DOM, no wall clock, no unseeded randomness.
+export { SimEngine, type EngineOptions } from './engine';
+export type { System, SimContext } from './system';
+export type { TruckState, KeyPos, InitialState, Conditions, DriverInputs, AirBrakeState, Wheel } from './state';
+export { WHEEL_IDS } from './state';
+export { AIR_SPEC, AIR_PARTS, AIR_CHECKS, governorCutOut, canReleasePark, type AirCheck, type ChamberSpec } from './physics/airbrakes';
+export { AIR_FAULTS, AIR_TESTS, type AirFault, type AirTest } from './data/airbrakes';
+export type { FaultSpec, FaultKind, Fault, Intermittent } from './faults';
+export { PRESETS, harnessFaultSpecs, type HarnessFault, type Preset } from './presets';
+export type { Action, ActionResult, LogEntry } from './actions';
+export { loadScenario, type Scenario, type ScenarioAnswer } from './scenario';
+export { replay, type ReplayResult } from './replay';
+export { scoreDiagnosis, scoreLog, type Diagnosis, type Score } from './scoring';
+export type { MeterRequest, MeterReading, ClampRequest } from './tools/multimeter';
+export type { ScanCode, LiveRow } from './tools/scantool';
+export type { Dtc } from './modules/dtc';
+export type { InputReading } from './modules/inputs';
+export type { RouteSpec } from './electrical/harness';
+export { TYPE_OF, WIRES, SUPPLY_GROUP, circuitType, defaultRoute, ROUTE_3D } from './electrical/harness';
+export * as catalog from './data/catalog';
+export * as mechanical from './data/mechanical';
+export * as j1939 from './j1939/frames';
+export { buildBits } from './j1939/bits';

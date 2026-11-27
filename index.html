@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>J1939 Network &amp; Fault Code Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Titillium+Web:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="blocks"><i style="background:#ff3b30"></i><i style="background:#f5a623"></i><i style="background:#3b8fd9"></i><i style="background:#e6e6e9"></i><i style="background:#69db7c"></i></div>
+      <h1>J1939 Network Diagnostic Console</h1>
+      <p class="sub">Heavy-duty truck network · fault injection · scan tool · multimeter</p>
+    </div>
+  </header>
+
+  <section class="panel" id="canCard" style="--c:#69db7c">
+    <h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> Understanding CAN</h2>
+    <div class="canNav" id="canNav">
+      <button data-pg="how" class="on">How CAN works</button>
+      <button data-pg="vs">CAN vs J1939</button>
+      <button data-pg="shorts">Opens and shorts</button>
+      <button data-pg="read">What wires should read</button>
+      <button data-pg="diag">Diagnosing the network</button>
+    </div>
+
+    <div class="canPg on" data-pg="how">
+      <div class="canCols"><div>
+      <h3>One pair of wires, every module</h3>
+      <p>A CAN (Controller Area Network) bus lets every module on the truck share data over two wires instead of running a separate wire for every signal. The ECM, TCM, ABS, cluster and aftertreatment module all connect in parallel to the same <b>backbone</b> through short <b>stubs</b>.</p>
+      <ul>
+        <li><b>CAN-H</b> (yellow on most trucks) and <b>CAN-L</b> (green) are twisted together. Noise picked up by the pair hits both wires equally, and the modules only look at the <b>difference</b> between them, so the noise cancels out.</li>
+        <li>A <b>120 Ω terminating resistor</b> sits at each end of the backbone. The two in parallel measure <b>60 Ω</b>. They soak up the signal at the ends so it doesn't bounce back and corrupt the next bit.</li>
+        <li>There is no master. Any module can talk when the bus is quiet, and <b>every module hears every message</b>. Each one keeps only the messages it needs.</li>
+        <li>If two modules start at once, the message with the <b>lower ID wins</b> (higher priority) and the other waits. Nothing is lost.</li>
+        <li>Every receiver checks each frame (CRC) and acknowledges it. A module that keeps making errors takes itself off the bus (<b>bus-off</b>) so it can't jam the network.</li>
+      </ul>
+      </div><div>
+      <h3>What the voltages do</h3>
+      <svg viewBox="0 0 460 200" style="width:100%;max-width:460px;background:#0b0b0e;border:1px solid #2a2a30">
+        <g font-family="IBM Plex Mono,monospace" font-size="11" fill="#8a8a93">
+          <text x="8" y="44">3.5 V</text><text x="8" y="94">2.5 V</text><text x="8" y="144">1.5 V</text>
+        </g>
+        <g stroke="#2a2a30"><line x1="50" y1="40" x2="450" y2="40"/><line x1="50" y1="90" x2="450" y2="90"/><line x1="50" y1="140" x2="450" y2="140"/></g>
+        <path d="M50 88 H130 V40 H230 V88 H290 V40 H350 V88 H450" fill="none" stroke="#e0b000" stroke-width="3"/>
+        <path d="M50 92 H130 V140 H230 V92 H290 V140 H350 V92 H450" fill="none" stroke="#2f9e44" stroke-width="3"/>
+        <g font-family="Titillium Web,sans-serif" font-size="12" fill="#d9d9de" text-anchor="middle">
+          <text x="90" y="118">recessive (1)</text><text x="180" y="170">dominant (0)</text><text x="260" y="118">recessive</text><text x="320" y="170">dominant</text>
+        </g>
+        <text x="440" y="34" text-anchor="end" font-size="11" fill="#e0b000" font-family="Titillium Web,sans-serif">CAN-H</text>
+        <text x="440" y="158" text-anchor="end" font-size="11" fill="#2f9e44" font-family="Titillium Web,sans-serif">CAN-L</text>
+        <text x="230" y="194" text-anchor="middle" font-size="11" fill="#8a8a93" font-family="Titillium Web,sans-serif">Idle: both ≈ 2.5 V. Dominant: about 2 V apart. A module reads the difference.</text>
+      </svg>
+      <ul>
+        <li><b>Recessive (logic 1, bus idle):</b> CAN-H and CAN-L both sit near 2.5 V. Difference about 0 V.</li>
+        <li><b>Dominant (logic 0):</b> CAN-H rises to about 3.5 V and CAN-L drops to about 1.5 V. Difference about 2 V.</li>
+        <li>A meter is too slow to see the bits. It shows an average: CAN-H a little above 2.5 V, CAN-L a little below. A <b>scope</b> shows the real square waves, and CAN-H and CAN-L should be mirror images.</li>
+      </ul>
+      <div class="canTip">Because the modules read the <b>difference</b>, CAN can sometimes keep working with one wire damaged, but often with errors. Never assume a "working" bus is a healthy one. Measure it.</div>
+      </div></div>
+    </div>
+
+    <div class="canPg" data-pg="vs">
+      <p><b>CAN</b> is the delivery system: how the bits travel on the wires, how modules take turns and how errors are caught. It says nothing about what the data <i>means</i>. <b>J1939</b> is the language heavy trucks speak on top of CAN. It defines who each module is, what each message contains and how fault codes are reported. Every J1939 network is a CAN network, but not every CAN network is J1939.</p>
+      <table class="rtab">
+        <tr><th></th><th>CAN (ISO 11898)</th><th>J1939 (SAE)</th><th>Passenger car OBD-II CAN</th></tr>
+        <tr><td><b>What it is</b></td><td>Physical wiring and frame format</td><td>Heavy-duty protocol built on CAN</td><td>Light-duty diagnostics built on CAN</td></tr>
+        <tr><td><b>Message ID</b></td><td>11-bit standard or 29-bit extended</td><td>29-bit: priority + PGN + source address</td><td>Usually 11-bit</td></tr>
+        <tr><td><b>Speed</b></td><td>Up to 1 Mbit/s</td><td class="v">250 kbit/s (500 kbit/s on newer trucks)</td><td class="v">500 kbit/s</td></tr>
+        <tr><td><b>Who sent it</b></td><td>Not defined</td><td>Source address in every ID (ECM 0, TCM 3, ABS 11, cluster 23, ACM 61)</td><td>Fixed request/response IDs</td></tr>
+        <tr><td><b>Data meaning</b></td><td>Not defined</td><td>PGNs group the data; SPNs are each value, with set scaling (e.g. engine speed 0.125 rpm/bit)</td><td>Mode and PID</td></tr>
+        <tr><td><b>Fault codes</b></td><td>Not defined</td><td>SPN + FMI + occurrence count, broadcast in DM1 (active) and requested with DM2 (inactive)</td><td>P-codes (e.g. P0101)</td></tr>
+        <tr><td><b>Long messages</b></td><td>8 data bytes max</td><td>Transport protocol (BAM) splits them across frames</td><td>ISO-TP</td></tr>
+        <tr><td><b>Diagnostic connector</b></td><td>Not defined</td><td>9-pin Deutsch: C = CAN-H, D = CAN-L, A = ground, B = battery +, E = shield (some trucks: 2nd CAN on F/G)</td><td>16-pin: 6 = CAN-H, 14 = CAN-L</td></tr>
+        <tr><td><b>Wiring</b></td><td>Twisted pair, 120 Ω each end</td><td>Twisted pair (shielded or unshielded), 120 Ω each end, short stubs, backbone max about 40 m</td><td>Twisted pair, 120 Ω each end</td></tr>
+      </table>
+      <div class="canTip">Reading a J1939 ID: <b>0x0CF00400</b> → priority 3 (the top 3 bits), PGN 0xF004 = 61444 (EEC1, engine speed), source address 0x00 = engine ECM. Try it on the Bus monitor tab.</div>
+    </div>
+
+    <div class="canPg" data-pg="shorts">
+      <div class="canCols"><div>
+      <h3>Short to ground</h3>
+      <p>The wire touches chassis or engine ground (chafed through on a bracket, crushed in a clip). The voltage on the wire is pulled toward <b>0 V</b>.</p>
+      <ul>
+        <li><b>Sensor signal wire:</b> reads near 0 V, below the 0.5 V minimum → <b>FMI 4</b> (voltage below normal or shorted low).</li>
+        <li><b>5 V reference:</b> pulls the whole supply down. Every sensor on that supply sets a code at once, plus a supply code (SPN 3509 or 3510).</li>
+        <li><b>Power feed:</b> blows the fuse or trips the breaker.</li>
+        <li><b>CAN-H to ground:</b> CAN-H reads near 0 V and the bus usually goes down. No module can talk.</li>
+        <li><b>How to prove it:</b> key off, unplug both ends of the wire, ohms from the wire to chassis ground. Good = OL. Shorted = near 0 Ω.</li>
+      </ul>
+      </div><div>
+      <h3>Short to power (battery voltage)</h3>
+      <p>The wire touches a battery-voltage circuit, usually another wire in the same harness that has rubbed through. The voltage is pulled <b>up</b> toward 12–14 V.</p>
+      <ul>
+        <li><b>Sensor signal wire:</b> reads battery voltage, way above the 4.5 V maximum → <b>FMI 3</b> (voltage above normal or shorted high). It can damage the ECM input.</li>
+        <li><b>Short to the 5 V reference</b> (signal touching ref) reads about 5 V. Also FMI 3.</li>
+        <li><b>CAN-H or CAN-L to power:</b> the wire sits at 12–14 V and the bus goes down. It can damage transceivers.</li>
+        <li><b>How to prove it:</b> use <b>volts, not ohms</b>. Key on, unplug the sensor, measure the signal wire to ground. It should be near 0 V (or the module's pull-up voltage, never more than 5 V). Battery voltage there means a short to power.</li>
+        <li>Never use the ohmmeter on a powered circuit. Find which power wire it is shorted to with the battery disconnected, ohming between the two wires.</li>
+      </ul>
+      </div></div>
+      <h3>Opens and other faults</h3>
+      <table class="rtab">
+        <tr><th>Fault</th><th>What the meter shows</th><th>Typical FMI</th></tr>
+        <tr><td>Open signal wire, 3-wire sensor</td><td>ECM side reads its pull-down (≈ 0 V in this simulator) or pull-up (≈ 5 V on some ECMs)</td><td class="v">4 (or 3)</td></tr>
+        <tr><td>Open thermistor circuit</td><td>Signal floats up to ≈ 4.9 V; ECM sees about −40 °C</td><td class="v">3</td></tr>
+        <tr><td>Open in a coil circuit (injector, solenoid, speed sensor)</td><td>OL through the coil; no current flows</td><td class="v">5</td></tr>
+        <tr><td>Wire-to-wire short</td><td>Low ohms between two circuits that should read OL</td><td class="v">3, 4 or 2</td></tr>
+        <tr><td>High resistance (corrosion, spread terminal, broken strands)</td><td>Fine with no load; voltage drop under load</td><td class="v">2, 3, 4 or intermittent</td></tr>
+        <tr><td>Signal OK but erratic</td><td>Readings jump around or drop out; check terminals, air gap and mounting</td><td class="v">2</td></tr>
+      </table>
+      <div class="canTip">Quick rule: <b>FMI 3 = something pulled it high</b> (short to power, short to 5 V, or an open with a pull-up). <b>FMI 4 = something pulled it low</b> (short to ground, or an open with a pull-down). <b>FMI 5 = no current</b> (open).</div>
+    </div>
+
+    <div class="canPg" data-pg="read">
+      <table class="rtab">
+        <tr><th>Circuit</th><th>Test</th><th>Good reading</th><th>If it's wrong</th></tr>
+        <tr class="hd"><td colspan="4">J1939 data link (9-pin connector)</td></tr>
+        <tr><td>CAN-H to CAN-L</td><td>Key OFF, ohms, C to D</td><td class="v">50–70 Ω (60 Ω)</td><td>120 Ω = one terminator missing or backbone open. Very high = both missing. ≈ 40 Ω = extra terminator. ≈ 0 Ω = H shorted to L.</td></tr>
+        <tr><td>CAN-H or CAN-L to ground</td><td>Key OFF, ohms, C to A and D to A</td><td class="v">High (not near 0)</td><td>Near 0 Ω = that wire is shorted to ground.</td></tr>
+        <tr><td>CAN-H</td><td>Key ON, volts, C to A</td><td class="v">2.5–3.0 V</td><td>≈ 0 V = shorted to ground. 12 V or more = shorted to power.</td></tr>
+        <tr><td>CAN-L</td><td>Key ON, volts, D to A</td><td class="v">2.0–2.5 V</td><td>≈ 0 V = shorted to ground. 12 V or more = shorted to power.</td></tr>
+        <tr><td>CAN-H and CAN-L together</td><td>Key ON, compare</td><td class="v">H a little above L</td><td>Both the same (≈ 2.5 V) = shorted together or no traffic.</td></tr>
+        <tr><td>Connector power and ground</td><td>Key ON, B to A</td><td class="v">Battery voltage</td><td>Low or 0 V = fuse, feed or ground fault. The scan tool adapter won't power up.</td></tr>
+        <tr class="hd"><td colspan="4">Sensor circuits</td></tr>
+        <tr><td>5 V reference</td><td>Key ON, ref to return (or ground)</td><td class="v">4.75–5.25 V</td><td>Low on several sensors = supply shorted to ground or loaded down.</td></tr>
+        <tr><td>3-wire sensor signal</td><td>Key ON, signal to return</td><td class="v">0.5–4.5 V</td><td>Below 0.5 V → FMI 4. Above 4.5 V → FMI 3.</td></tr>
+        <tr><td>Sensor return</td><td>Key ON, return to ground</td><td class="v">Under 0.1 V</td><td>Higher = resistance in the return path.</td></tr>
+        <tr><td>Temperature sensor signal</td><td>Key ON, signal to return</td><td class="v">Changes with temperature (≈ 3 V at 20 °C, lower when hot)</td><td>≈ 4.9 V = open. ≈ 0 V = shorted.</td></tr>
+        <tr><td>Magnetic speed sensor (crank, cam, wheel)</td><td>Volts AC while turning</td><td class="v">Rises with speed (wheel sensor ≥ 0.25 V AC at ½ rev/s)</td><td>Low = air gap too big or weak sensor. None = open or shorted.</td></tr>
+        <tr class="hd"><td colspan="4">Module power</td></tr>
+        <tr><td>Module power feed</td><td>Voltage drop, battery + to module pin, under load</td><td class="v">Under 0.5 V</td><td>Higher = corroded fuse, terminal or wire.</td></tr>
+        <tr><td>Module ground</td><td>Voltage drop, module ground pin to battery −, under load</td><td class="v">Under 0.2 V</td><td>Higher = poor ground. Can cause odd, random codes.</td></tr>
+      </table>
+    </div>
+
+    <div class="canPg" data-pg="diag">
+      <div class="canCols"><div>
+      <h3>Step by step</h3>
+      <ol>
+        <li><b>Find out who isn't talking.</b> Connect the scan tool and look at the cluster. Which modules are missing? Look for <b>SPN 639</b> (J1939 network) codes and "no data from…" messages.</li>
+        <li><b>Key off, check the backbone:</b> C to D at the 9-pin should be about 60 Ω. This one reading checks both terminators and most of the backbone.</li>
+        <li><b>Check each wire to ground:</b> C to A and D to A should not be near 0 Ω.</li>
+        <li><b>Key on, check the voltages:</b> CAN-H 2.5–3.0 V, CAN-L 2.0–2.5 V. Near 0 V or battery voltage points to a short.</li>
+        <li><b>One module missing?</b> Check its power and ground first (voltage-drop test). Then unplug it and measure H to L at its harness connector: 60 Ω proves its stub reaches the backbone.</li>
+        <li><b>Whole bus down?</b> Unplug modules one at a time. If communication comes back, that module or its stub is pulling the bus down.</li>
+        <li><b>Intermittent?</b> Wiggle-test the harness while watching the voltages, or use a scope. Look for H and L mirror images with clean square edges.</li>
+      </ol>
+      </div><div>
+      <h3>Good habits</h3>
+      <ul>
+        <li>Always measure resistance with the <b>key off</b>. A powered bus gives false ohm readings.</li>
+        <li>Back-probe connectors. Don't pierce CAN wires: it breaks the shield and twist and lets water in.</li>
+        <li>Keep repairs twisted, with about one twist per inch. Never run CAN wires untwisted or splice in regular wire.</li>
+        <li>Some modules have a terminating resistor built in. Check the wiring diagram before adding or removing one.</li>
+        <li>Clear network codes only after the repair, then confirm every module is back on the scan tool.</li>
+        <li>A module that drops off only when the engine runs often has a power or ground problem, not a CAN wiring problem.</li>
+      </ul>
+      <div class="canTip">Practice: go to <b>Faults → Network Wiring</b>, pull a terminator or pick a wiring fault, then work through these steps with the meter on the 9-pin connector.</div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="panel" style="--c:#f5a623">
+    <h2>Vehicle control</h2>
+    <div class="ctrlGrid">
+      <div><div class="lab">Key switch</div><span class="seg" id="keySeg"><button data-k="off">Off</button><button data-k="on">On</button><button data-k="run">Run</button></span></div>
+      <div><div class="lab">Road speed set <b id="mphVal">62 mph</b></div><input type="range" id="mphSlider" min="0" max="75" step="1" value="62"></div>
+      <div><div class="lab">Load</div><select id="loadSel" style="width:100%"><option value="bobtail">Bobtail (tractor only)</option><option value="loaded" selected>Loaded 80,000 lb · flat</option><option value="grade">Loaded · 6% grade</option></select></div>
+      <div><div class="lab">Road surface</div><select id="roadSel" style="width:100%"><option value="dry">Dry</option><option value="wet">Wet</option><option value="ice">Ice</option></select></div>
+      <div><div class="lab">&nbsp;</div><button id="btnBrake" class="alert">Hard brake</button></div>
+      <div><div class="lab">Sim rate</div><span class="bar"><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="btnPause">Pause</button><button id="btnReset">Reset</button></span></div>
+    </div>
+    <div class="status" id="truckState"></div>
+  </section>
+
+  <div class="row top2">
+    <section class="panel" style="--c:#3b8fd9">
+      <h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> J1939 network <span class="sp"></span><span class="mini">bus load <span class="load"><i id="loadBar"></i></span> <b id="loadTxt">0%</b></span></h2>
+      <svg id="net" viewBox="0 0 1000 492" role="img" aria-label="J1939 network diagram"></svg>
+      <p class="note" style="margin:6px 0 0">Click any sensor or actuator to inject a fault. Dots on the backbone are frames.</p>
+    </section>
+    <section class="panel" style="--c:#ff3b30">
+      <h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> Instrument cluster</h2>
+      <div class="cluster">
+        <div class="lamps" id="lamps"></div>
+        <div class="gauges" id="gauges"></div>
+        <div class="msgc" id="msgc"></div>
+        <div class="cfoot" id="cfoot"></div>
+      </div>
+    </section>
+  </div>
+
+  <nav class="nav" id="nav">
+    <button data-tab="faults">Faults</button><button data-tab="air">Air brakes</button><button data-tab="scan">Scan tool</button><button data-tab="meter">Multimeter</button><button data-tab="bus">Bus monitor</button><button data-tab="codes">Code library</button><button data-tab="reference">Reference</button>
+  </nav>
+
+  <div class="tabsec" id="sec-faults">
+    <div class="row r2">
+      <section class="panel" style="--c:#f5a623"><h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> Inject a fault</h2><div class="tabs" id="tabs"></div><div id="faultPanel"></div></section>
+      <section class="panel explain" id="explain" style="--c:#ff3b30"><h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> Fault code explained</h2><div id="explainBody"><p class="muted">Inject a fault, then click its code (in the fault list, the scan tool or the cluster) to see what it means, how it is encoded in DM1, and how to diagnose it.</p></div></section>
+    </div>
+  </div>
+
+  <div class="tabsec" id="sec-air"></div>
+
+  <div class="tabsec" id="sec-scan">
+    <section class="panel" id="scanCard" style="--c:#6fd3ff">
+      <h2>Scan tool · generic J1939 software through a data-link adapter on the 9-pin</h2>
+      <div class="scan">
+        <div class="scanTop"><span>SHOP SCAN TOOL · SA 249</span><span id="scanStatus"></span></div>
+        <div class="scanTabs" id="scanTabs"></div>
+        <div class="scanBody" id="scanBody"></div>
+      </div>
+      <p class="note">A generic J1939 tool sees standard broadcasts (DM1 codes, standard live data) and sends standard requests (DM2, DM11, DM3). OEM software adds proprietary data such as raw sensor voltages and OEM-specific tests.</p>
+    </section>
+  </div>
+
+  <div class="tabsec" id="sec-meter">
+    <section class="panel" id="dmmCard" style="--c:#f5a623">
+      <h2>Multimeter</h2>
+      <div class="lvlBar"><span class="lab" style="margin:0">Difficulty</span><div class="seg" id="lvlBar"><button data-lvl="1" class="on">1 · Bench</button><button data-lvl="2">2 · Blind schematic</button><button data-lvl="3">3 · Engine harness 3D</button><button data-lvl="4">4 · Whole truck 3D</button><button data-lvl="5">5 · Compound faults</button></div></div>
+      <p id="lvlDesc"></p>
+      <div id="schemWrap">
+      <div id="dmmBar" class="dmmBar"></div>
+      <div class="dmmWrap">
+        <svg id="dmm" viewBox="0 0 960 360"></svg>
+        <div class="meterBody">
+          <div class="lcd"><span id="lcdMode">V ⎓</span><span id="lcdVal">- - - -</span></div>
+          <div class="fnRow" id="dmmFn"></div>
+          <div class="leadRow" id="dmmLeads"></div>
+          <div class="leadAct"><button id="dmmSwap">Swap leads</button><button id="dmmClear">Clear leads</button></div>
+          <label class="small muted" style="display:block;margin-top:10px"><input type="checkbox" id="dmmRef" checked> Show known-good reference</label>
+        </div>
+      </div>
+      <div class="row r2" style="margin-top:14px">
+        <div id="dmmInfo"></div>
+        <div id="dmmQuiz" class="box" style="margin:0"></div>
+      </div>
+      <div class="row r2" style="margin-top:14px">
+        <div><h3>Readings log <button id="dmmLogClear" style="float:right;padding:2px 8px;font-size:10px">Clear</button></h3><div id="dmmLog"></div></div>
+        <details id="dmmChecks"><summary>Standard checks for this circuit</summary><ul id="dmmChecksList"></ul></details>
+      </div>
+      </div>
+      <div id="hWrap" style="display:none">
+        <div class="hTop" id="hTop"></div>
+        <div class="hGrid">
+          <div class="hSecs" id="hSecs"></div>
+          <div><div id="h3d"><div class="h3hint">Drag to rotate · Shift+drag to pan · Shift+click to move to a spot · scroll to zoom · click a connector, pin or harness section</div></div>
+          <div class="meterBody hMeter">
+            <div class="hmCol"><div class="lab">Tool</div><div class="seg" id="hTool" style="margin-bottom:8px"></div><div class="lab">Key switch</div><div class="seg" id="hKey"></div></div>
+            <div class="hmCol"><div class="lcd" style="margin-bottom:8px"><span id="hLcdMode">V ⎓</span><span id="hLcd" style="font:400 34px 'IBM Plex Mono',monospace;color:#b8ffcf">- - - -</span></div><div class="fnRow" id="hFn" style="margin-bottom:0"></div></div>
+            <div class="hmCol"><div class="leadRow" id="hLeads"></div><div class="leadAct"><button id="hSwapB">Swap leads</button><button id="hClearB">Clear leads</button></div><div id="hSpin" style="margin-top:6px"></div><div id="hWarn" class="small" style="margin-top:4px"></div></div>
+          </div>
+<div id="hSection"></div></div>
+        </div>
+        <div class="row" style="margin-top:14px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+          <div><h3>Readings log</h3><div id="hLog"></div></div>
+          <div id="hAnswer" class="box" style="margin:0"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="tabsec" id="sec-bus">
+    <section class="panel" style="--c:#3b8fd9">
+      <h2>Bus monitor · one row per CAN ID</h2>
+      <p class="note" style="margin-top:-4px">Click a row to decode it. Grey rows have stopped updating. Multi-packet DM1/DM2 messages travel as TP.CM (BAM) + TP.DT frames.</p>
+      <div class="monwrap"><table class="mon" id="mon"><thead><tr><th>ID</th><th>Src</th><th>PGN</th><th>Name</th><th>DLC</th><th>Data</th><th>Rate</th><th>Count</th></tr></thead><tbody></tbody></table></div>
+    </section>
+    <section class="panel" style="--c:#6fd3ff">
+      <h2>Frame decoder</h2>
+      <div id="decoder"><p class="muted">Click a row in the bus monitor.</p></div>
+      <div class="scope"><svg id="scope" viewBox="0 0 1000 160"></svg></div>
+    </section>
+  </div>
+
+  <div class="tabsec" id="sec-codes">
+    <section class="panel" id="codesCard" style="--c:#ff3b30">
+      <h2>Common heavy-duty J1939 fault codes</h2>
+      <div class="bar" style="margin-bottom:10px"><input id="codeSearch" placeholder="Search SPN, FMI, system or word (e.g. 3719, DEF, injector, ABS)"><select id="codeSys"><option value="">All systems</option></select></div>
+      <div style="max-height:560px;overflow:auto"><table class="sct codes" id="codeTable"></table></div>
+      <p class="note">SPN meanings are standard, but <b>the FMI an OEM sets for a given failure, its lamp, and its derate behavior vary by make and model year</b> (for example, Detroit reports low rail pressure as 157/16 where another OEM uses 157/18). Look up the exact code in the OEM troubleshooting guide before testing. Codes marked "secondary" are effects: fix the root-cause code first.</p>
+    </section>
+  </div>
+
+  <div class="tabsec" id="sec-reference">
+    <section class="panel" style="--c:#e6e6e9">
+      <h2>FMI reference · SAE J1939-73</h2>
+      <table class="fmi" id="fmiTable"></table>
+      <p class="note">A J1939 fault code is <b>SA + SPN + FMI</b> (plus an occurrence count). SA is the module that set it, SPN is the part or parameter, and FMI is how it failed. FMIs 3, 4, 5 and 6 usually point to a <b>circuit</b> problem. FMIs 0, 1 and 15–18 usually mean the sensor is reading correctly and the <b>real condition</b> is out of range, so verify it mechanically (for example, with an oil pressure gauge).</p>
+    </section>
+    <section class="panel" style="--c:#6fd3ff">
+      <h2>Known-good resistance values · sending units and modules</h2>
+      <p class="note" style="margin-top:0">Key <b>OFF</b>, connector unplugged, meter on Ω. Measure at the component's own pins unless the row says otherwise. The "Simulator" column is exactly what the meter in this page reads when the part is good. The "Typical real part" column is a general range only: <b>always use the OEM spec for the exact part number.</b></p>
+      <table class="rtab">
+        <tr><th>Part</th><th>Pins</th><th>Simulator</th><th>Typical real part</th><th>Notes</th></tr>
+        <tr class="hd"><td colspan="5">Sending units, actuators and injectors</td></tr>
+        <tr><td>Crankshaft &amp; camshaft speed sensors (2-wire magnetic / VR)</td><td>Signal + to Signal −</td><td class="v">900 Ω</td><td class="v">≈ 200–1,500 Ω</td><td>Each pin to ground or the sensor body: OL. Running, AC output rises with rpm. Many newer engines use 3-wire Hall sensors instead: those are checked with voltage (5 V ref, return, square-wave signal), not ohms.</td></tr>
+        <tr><td>Wheel speed sensors (ABS)</td><td>Sensor + to Sensor −</td><td class="v">1,900 Ω</td><td class="v">1,500–2,500 Ω (Bendix WS-24)</td><td>Each pin to ground: OL. Spin the wheel at about ½ rev/s: at least 0.25 V AC.</td></tr>
+        <tr><td>Transmission output shaft speed sensor</td><td>Signal + to Signal −</td><td class="v">1,000 Ω (levels 1–2)</td><td class="v">Check OEM</td><td>Each pin to ground: OL. Values vary a lot by transmission make.</td></tr>
+        <tr><td>Coolant &amp; transmission oil temperature (NTC thermistor)</td><td>Signal to Return</td><td class="v">3.00 kΩ at 25 °C</td><td class="v">Check OEM curve</td><td>Resistance <b>drops</b> as temperature rises. Full curve below. Signal or return to ground: OL.</td></tr>
+        <tr><td>Injector solenoid</td><td>High side to Low side</td><td class="v">0.8 Ω at the injector<br>≈ 1.1 Ω at the ECM</td><td class="v">Usually under 2 Ω</td><td>Each wire to engine ground: OL. A reading near 0 Ω is a shorted coil; OL is an open coil or wire. Never probe injector wires with the engine running.</td></tr>
+        <tr><td>Fuel level sender</td><td>Signal to Sender return</td><td class="v">33 Ω full<br>240 Ω empty</td><td class="v">33 Ω full / 240 Ω empty (common US standard)</td><td>Sweep the float: resistance should change smoothly with no dead spots. Some senders use 0–90 Ω or a reversed scale, so match the cluster.</td></tr>
+        <tr><td>3-wire 5 V sensors: MAP, rail pressure, oil pressure, MAF, accelerator pedal, DEF level, DPF ΔP, throttle / EGR / VGT position</td><td>5 V ref, Signal, Return</td><td class="v">Ref–Ret ≈ 500 Ω<br>Ref–Sig ≈ 2 kΩ</td><td class="v">No published spec</td><td><b>Not a resistance test.</b> These are active electronic sensors; ohm readings between their pins mean little and differ by brand. Key ON instead: 5 V ref ≈ 5.0 V (± 0.25), return ≈ 0 V to ground, signal 0.5–4.5 V and moving with the condition.</td></tr>
+        <tr><td>Throttle, EGR and VGT actuators</td><td>Position sensor pins</td><td class="v">as 3-wire sensor above</td><td class="v">Check OEM</td><td>The simulator models only the position sensor. The motor drive wires (not modeled) usually read a few ohms; smart actuators talk on CAN and are tested with the service tool.</td></tr>
+        <tr class="hd"><td colspan="5">Wiring and data link</td></tr>
+        <tr><td>Good wire, end to end</td><td>One wire, connector to connector</td><td class="v">≈ 0.1–0.3 Ω (with leads)</td><td class="v">Under ≈ 0.5 Ω</td><td>A partly broken wire reads OK with no load but fails a voltage-drop test. High resistance = corrosion, spread terminal or cut strands.</td></tr>
+        <tr><td>Wire insulation</td><td>Any wire to chassis ground</td><td class="v">OL</td><td class="v">OL (megohms)</td><td>A few ohms or less = chafed to ground. Unplug both ends first.</td></tr>
+        <tr><td>Wire to wire in the same harness</td><td>Between two circuits</td><td class="v">OL</td><td class="v">OL</td><td>Low reading = wires shorted together or water bridging terminals (≈ 3.3 kΩ in the simulator).</td></tr>
+        <tr><td>J1939 backbone</td><td>9-pin C (CAN-H) to D (CAN-L)</td><td class="v">60 Ω</td><td class="v">50–70 Ω</td><td>≈ 120 Ω = one terminating resistor missing or an open backbone. Very high (kΩ) = both terminators missing; the bus fails. ≈ 40 Ω = a third resistor. Near 0 Ω = CAN-H shorted to CAN-L.</td></tr>
+        <tr><td>Terminating resistor</td><td>Across the resistor</td><td class="v">120 Ω</td><td class="v">≈ 120 Ω</td><td>One at each end of the backbone.</td></tr>
+        <tr class="hd"><td colspan="5">ECM and module inputs (simulator model)</td></tr>
+        <tr><td>Sensor return to ground (inside the ECM)</td><td>ECM return pin to chassis ground</td><td class="v">0.3 Ω</td><td class="v">Not published</td><td>Real ECMs often isolate sensor return from chassis ground. Don't ohm into module pins unless the OEM procedure says to.</td></tr>
+        <tr><td>5 V reference supply</td><td>Key ON, ref pin to ground</td><td class="v">5.00 V (≈ 2 Ω source)</td><td class="v">4.75–5.25 V</td><td>Shared by several sensors: a short on one sensor pulls the whole supply down.</td></tr>
+        <tr><td>3-wire sensor signal input</td><td>Signal pin to ground</td><td class="v">100 kΩ pull-down</td><td class="v">Pull-down or pull-up</td><td>Why an open signal reads ≈ 0 V (FMI 4) here. ECMs with a pull-up read ≈ 5 V instead (FMI 3).</td></tr>
+        <tr><td>Thermistor input</td><td>Signal pin to 5 V</td><td class="v">2.49 kΩ pull-up</td><td class="v">Typically 1–10 kΩ</td><td>Open circuit reads ≈ 4.9 V (very cold, FMI 3); shorted reads ≈ 0 V (very hot, FMI 4).</td></tr>
+        <tr><td>Fuel sender input (cluster)</td><td>Signal pin to 5 V</td><td class="v">300 Ω pull-up</td><td class="v">Check OEM</td><td></td></tr>
+        <tr><td>Magnetic (VR) speed input</td><td>Across the two input pins</td><td class="v">20 kΩ, biased 2.5 V</td><td class="v">Not published</td><td>Key ON with the sensor unplugged: the input sits at a small bias voltage.</td></tr>
+        <tr><td>Injector driver outputs</td><td>Each pin to ground, key OFF</td><td class="v">100 kΩ</td><td class="v">Not published</td><td>Drivers fire at 48–100+ V on many engines. Never probe them running.</td></tr>
+        <tr><td>Module power feed and ground</td><td>Battery + to module power pin / ground pin to battery −</td><td class="v">≈ 0.02 Ω each</td><td class="v">Voltage drop under 0.2–0.5 V</td><td>Test power and ground with a <b>voltage-drop test under load</b>, not ohms.</td></tr>
+      </table>
+      <h2 style="margin-top:4px">NTC temperature sensor curve (simulator)</h2>
+      <table class="rtab" style="max-width:520px">
+        <tr><th>Temperature</th><th>Sensor resistance</th><th>Signal at ECM (2.49 kΩ pull-up)</th></tr>
+        <tr><td>-20 °C / -4 °F</td><td class="v">25.7 kΩ</td><td class="v">4.56 V</td></tr><tr><td>0 °C / 32 °F</td><td class="v">9.06 kΩ</td><td class="v">3.92 V</td></tr><tr><td>20 °C / 68 °F</td><td class="v">3.69 kΩ</td><td class="v">2.98 V</td></tr><tr><td>25 °C / 77 °F</td><td class="v">3.00 kΩ</td><td class="v">2.73 V</td></tr><tr><td>40 °C / 104 °F</td><td class="v">1.68 kΩ</td><td class="v">2.02 V</td></tr><tr><td>60 °C / 140 °F</td><td class="v">844 Ω</td><td class="v">1.27 V</td></tr><tr><td>80 °C / 176 °F</td><td class="v">458 Ω</td><td class="v">0.78 V</td></tr><tr><td>90 °C / 194 °F</td><td class="v">346 Ω</td><td class="v">0.61 V</td></tr><tr><td>100 °C / 212 °F</td><td class="v">265 Ω</td><td class="v">0.48 V</td></tr><tr><td>110 °C / 230 °F</td><td class="v">206 Ω</td><td class="v">0.38 V</td></tr>
+      </table>
+      <p class="note">Real OEM coolant sensor curves differ from part to part. Compare the resistance with an actual temperature from an IR thermometer or a second gauge.</p>
+    </section>
+    <section class="panel" style="--c:#8a8a93">
+      <h2>Accuracy notes</h2>
+      <ul class="note" style="margin:0;padding-left:18px">
+        <li>Message layouts follow SAE J1939-71/-73 (J1939DA): EEC1 61444, EEC2 61443, ET1 65262, EFL/P1 65263, IC1 65270, EGF1 61450, LFE1 65266, CCVS 65265, Dash Display 65276, ETC1 61442, ETC2 61445, EBC1 61441, EBC2 65215, DEF tank 65110, DM1 65226, DM2 65227, DM3 65228, DM11 65235, Request 59904, Acknowledgment 59392, TP.CM 60416, TP.DT 60160. Bytes not used here are sent as 0xFF ("not available"); a real module fills many of them.</li>
+        <li>The vehicle model is simplified: a 10-speed transmission, 3.36 axle ratio, about 500 tire revolutions per mile, and approximate boost, airflow, fuel rate and rail pressure for each load. Numbers are realistic in shape, not specific to any engine.</li>
+        <li>SPN numbers are standard, but <b>which SPN an OEM uses for a part, and which FMI it sets for a given failure, varies</b>. Here, crank = SPN 190 and cam = SPN 723 (Cummins style). Detroit uses 636 for crank and 723 for cam; Mack/Volvo use 637 for crank and 636 for cam. Wheel sensor FMIs follow Bendix (FMI 1 air gap, 7 wheel end, 8 erratic) and WABCO (FMI 5 open, 6 shorted). Which sensors share a 5 V supply (SPN 3509/3510) is engine-specific. Always use the OEM fault tree.</li>
+        <li>On some engines the ECM reports aftertreatment faults itself instead of a separate ACM, and NOx sensors often sit on a private aftertreatment CAN.</li>
+        <li>Lamp choices are typical for HD-OBD (2010+) trucks. Detection times are shortened so the demo moves quickly. Multimeter readings come from a simplified circuit model; use OEM specs for real values.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<script type="module" src="/src/ui/main.ts"></script>
+</body>
+</html>
