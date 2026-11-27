@@ -22,9 +22,9 @@ export interface SimContext {
 }
 
 export interface System {
-  /** Unique id. Built-ins: 'powertrain', 'air', 'electrical', 'network'. */
+  /** Unique id. Built-ins: 'powertrain', 'engineMech', 'air', 'electrical', 'network'. */
   id: string;
-  /** Lower runs first. Built-ins use 100 (powertrain), 200 (air), 300 (electrical), 400 (network). Default 250. */
+  /** Lower runs first. Built-ins use 100 (powertrain), 150 (engineMech), 200 (air), 300 (electrical), 400 (network). Default 250. */
   order?: number;
   init?(ctx: SimContext): void;
   step(ctx: SimContext): void;

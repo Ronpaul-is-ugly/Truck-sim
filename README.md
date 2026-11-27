@@ -1,7 +1,25 @@
 # Truck-sim
 
 Simulators for learning and diagnosing medium and heavy trucks. Every module runs on one shared engine, so it is always the same truck:
-the J1939 network and fault code simulator, and the air brake simulator (the **Air brakes** tab).
+the J1939 network and fault code simulator, the engine fundamentals module (the **Engine** tab), and the air brake simulator (the **Air brakes** tab).
+
+## Engine fundamentals
+
+`src/engine/physics/enginemech.ts` is the base engine (System id `engineMech`, order 150): a 12.9 L inline six (130 × 162 mm, 18.5:1,
+firing order 1-5-3-6-2-4) with per-cylinder sealing and leak paths, a four-stroke cylinder pressure model, blow-by, coolant level,
+intake restriction and exhaust smoke. It runs right after the powertrain, so what is wrong inside the engine reaches the rest of the truck:
+
+- A cylinder that can't hold compression contributes less, so the ECM's crank-acceleration balance check sets that injector's SPN 651–656 FMI 7
+  (a burnt exhaust valve looks like an injector code, as on a real truck). The scan tool's cylinder cutout shows it too.
+- Worn bearings lower real oil pressure (SPN 100 FMI 1 at hot idle), a head gasket breach drains coolant until the ECM sets SPN 110,
+  a plugged air filter starves boost (SPN 102 FMI 18).
+- New action `engineCheck` (compression, wet compression, leak-down, blow-by, master oil gauge, cooling checks, valve lash, stethoscope,
+  smoke, oil analysis, intake restriction). Logged and replayable.
+
+`src/engine/data/engine.ts` holds the 21 components for the parts explorer, 12 cause-and-effect questions and 13 mystery faults.
+`tests/engine-fundamentals.test.ts` runs every check on a healthy engine and shows each fault failing the check that should catch it.
+The tab (`src/ui/engine.ts`) adds the animated cylinder and pressure chart, the parts explorer and identify drill, live system readings,
+specs with a displacement calculator, the engine shop and the mystery mode.
 
 ## Air brakes
 

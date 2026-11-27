@@ -9,6 +9,7 @@ import { Electrical } from './electrical/electrical';
 import { MessageBus } from './j1939/bus';
 import { PowertrainSystem, computeVehicle } from './physics/powertrain';
 import { AirBrakeSystem, airInspect, canReleasePark } from './physics/airbrakes';
+import { EngineMechSystem, engineInspect } from './physics/enginemech';
 import { NoxSensors } from './devices/nox';
 import { defaultOutputs, type ModuleOutputs } from './modules/outputs';
 import { Ecm } from './modules/ecm';
@@ -81,6 +82,7 @@ export class SimEngine {
 
     const builtIn: System[] = [
       new PowertrainSystem(),
+      new EngineMechSystem(),
       new AirBrakeSystem(),
       { id: 'electrical', order: 300, step: () => this.electricalStep() },
       new NoxSensors(this.subnet),
@@ -194,6 +196,8 @@ export class SimEngine {
         return { ok: true };
       case 'airCheck':
         return { ok: true, text: airInspect(s, this.faults, a.check) };
+      case 'engineCheck':
+        return { ok: true, text: engineInspect(s, this.faults, a.check) };
       case 'unplug':
       case 'plug': {
         const set = h.unplugged.get(a.circuit) ?? new Set<number>();

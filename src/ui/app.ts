@@ -388,7 +388,7 @@ $('loadSel').addEventListener('change',e=>{eng.dispatch({type:'setLoad',load:e.t
 $('roadSel').addEventListener('change',e=>{eng.dispatch({type:'setRoad',road:e.target.value});});
 $('btnBrake').addEventListener('click',()=>{if(S.ctrl.key==='run'&&S.mphAct>1){eng.dispatch({type:'brake'});updateCtrlUI();}});
 // ===================== tab navigation =====================
-const TABNAMES=['faults','air','scan','meter','bus','codes','reference'];
+const TABNAMES=['faults','engine','air','scan','meter','bus','codes','reference'];
 function showTab(t){
   if(!TABNAMES.includes(t))t='faults';
   TABNAMES.forEach(n=>$('sec-'+n).classList.toggle('on',n===t));
