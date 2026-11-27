@@ -5,6 +5,7 @@
 // (The MX-13 GLB used by the multimeter and the 3D panel above is one welded mesh per material, so it can't come apart.)
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { ENGINE_SPEC, cylinderAngle, valveLift } from '../engine';
 import { TEARDOWN, type TeardownPart } from './teardown-data';
 import { detailHTML, detailFor } from './engine-detail';
@@ -46,11 +47,45 @@ interface Comp {
   inst: THREE.Object3D[];
 }
 let cur: Comp;
+// Procedural surface textures: sand-cast grain for castings, plateau-hone cross-hatch for liner bores.
+const CAST = new Set(['block', 'head', 'exh', 'pan', 'alu']);
+const TEX: Record<string, THREE.Texture> = {};
+function surfaceTex(kind: 'cast' | 'hone') {
+  if (TEX[kind]) return TEX[kind];
+  const n = 256, cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  const x = cv.getContext('2d')!;
+  x.fillStyle = kind === 'cast' ? '#d8d8d8' : '#ffffff';
+  x.fillRect(0, 0, n, n);
+  if (kind === 'cast') {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let k = 0; k < 9000; k++) {
+      const v = 190 + rnd() * 65;
+      x.fillStyle = `rgb(${v},${v},${v})`;
+      const r = 0.6 + rnd() * 1.6;
+      x.beginPath(); x.arc(rnd() * n, rnd() * n, r, 0, Math.PI * 2); x.fill();
+    }
+  } else {
+    x.strokeStyle = 'rgba(150,150,150,0.6)';
+    x.lineWidth = 1;
+    for (let k = -n; k < n * 2; k += 6) {
+      x.beginPath(); x.moveTo(k, 0); x.lineTo(k + n * 0.5, n); x.stroke();
+      x.beginPath(); x.moveTo(k, 0); x.lineTo(k - n * 0.5, n); x.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(kind === 'cast' ? 3 : 6, kind === 'cast' ? 3 : 2);
+  return (TEX[kind] = t);
+}
 function mat(k: string) {
   let m = cur.mats.get(k);
   if (!m) {
     const [c, metal, rough] = MAT[k];
-    m = new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, side: k === 'liner' ? THREE.DoubleSide : THREE.FrontSide });
+    m = new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, side: THREE.DoubleSide });
+    if (CAST.has(k)) m.roughnessMap = surfaceTex('cast');
+    if (k === 'liner') { m.map = surfaceTex('hone'); m.roughnessMap = m.map; }
     cur.mats.set(k, m);
   }
   return m;
@@ -129,6 +164,49 @@ function gear(parent: THREE.Object3D, r: number, w: number, teeth: number, p: V,
   return put(g, parent, p, sub, ex);
 }
 
+// ---------------- detail helpers ----------------
+type Dir = 'x' | '-x' | 'y' | '-y' | 'z' | '-z';
+function rbox(parent: THREE.Object3D, s: V, p: V, m: string, sub?: string, ex?: V, r = 0.006) {
+  const rr = Math.min(r, s[0] / 2 - 1e-4, s[1] / 2 - 1e-4, s[2] / 2 - 1e-4);
+  return put(new THREE.Mesh(new RoundedBoxGeometry(s[0], s[1], s[2], 2, rr), mat(m)), parent, p, sub, ex) as THREE.Mesh;
+}
+/** A turned part: profile points are [radius, height]; revolved around y (or laid along x / z). */
+function lathe(parent: THREE.Object3D, pts: [number, number][], p: V, m: string, sub?: string, ex?: V, axis: 'x' | 'y' | 'z' = 'y', seg = 40) {
+  const geo = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
+  if (axis === 'x') geo.rotateZ(-Math.PI / 2);
+  if (axis === 'z') geo.rotateX(Math.PI / 2);
+  return put(new THREE.Mesh(geo, mat(m)), parent, p, sub, ex) as THREE.Mesh;
+}
+/** Hex-head bolt (head + washer). p is the center of the head; dir points out of the part. */
+function bolt(parent: THREE.Object3D, p: V, dir: Dir, r: number, sub?: string, ex?: V, m = 'dark') {
+  const ax = dir.replace('-', '') as 'x' | 'y' | 'z';
+  const sg = dir.startsWith('-') ? -1 : 1;
+  const off = (d: number): V => [p[0] + (ax === 'x' ? d * sg : 0), p[1] + (ax === 'y' ? d * sg : 0), p[2] + (ax === 'z' ? d * sg : 0)];
+  const h = cyl(parent, r, r * 0.75, p, ax, m, sub, ex, 6);
+  cyl(parent, r * 1.35, r * 0.18, off(-r * 0.46), ax, 'steel', sub, ex, 16);
+  return h;
+}
+/** Bolts evenly spaced along a straight line. */
+function boltRow(parent: THREE.Object3D, a: V, b: V, n: number, dir: Dir, r: number, sub?: string, ex?: V, m = 'dark') {
+  for (let k = 0; k < n; k++) {
+    const t = n === 1 ? 0.5 : k / (n - 1);
+    bolt(parent, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t], dir, r, sub, ex, m);
+  }
+}
+/** Bolts around a circle in the plane normal to x. */
+function boltCircleX(parent: THREE.Object3D, x: number, cy: number, cz: number, rad: number, n: number, dir: Dir, r: number, sub?: string, ex?: V, m = 'dark', a0 = 0) {
+  for (let k = 0; k < n; k++) {
+    const a = a0 + (k / n) * Math.PI * 2;
+    bolt(parent, [x, cy + Math.cos(a) * rad, cz + Math.sin(a) * rad], dir, r, sub, ex, m);
+  }
+}
+/** Hose clamp / V-band ring. */
+function clamp(parent: THREE.Object3D, r: number, p: V, axis: 'x' | 'y' | 'z', sub?: string, ex?: V) {
+  return torus(parent, r, 0.004, p, axis, 'steel', sub, ex);
+}
+const HEAD_BOLTS: [number, number][] = [];
+for (const x of [...BULK, ...Array.from({ length: 6 }, (_, i) => CX(i))]) for (const z of [0.125, -0.125]) HEAD_BOLTS.push([x, z]);
+
 // ---------------- the parts ----------------
 const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
   block(g) {
@@ -138,6 +216,7 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
     for (const s of [1, -1]) {
       box(g, [1.12, 0.22, 0.02], [0, 0.06, s * 0.185], 'block', 'bCasting');
       box(g, [1.12, 0.03, 0.04], [0, 0.155, s * 0.165], 'block', 'bCasting');
+      box(g, [1.13, 0.014, 0.034], [0, -0.043, s * 0.19], 'block', 'bCasting'); // pan rail
     }
     for (const x of [...BULK, 0.56, -0.56]) {
       const end = Math.abs(x) > 0.5;
@@ -152,9 +231,26 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
         sh.lineTo(-0.175, 0.17);
       }, end ? 0.03 : 0.024, [x, 0, 0], 'block', 'bCasting');
     }
-    // coolant and oil gallery bosses, core plugs
+    // stiffening ribs on the outside of the water jacket and the skirt, one at each bulkhead
+    for (const s of [1, -1]) {
+      for (const x of BULK) {
+        rbox(g, [0.014, DECK - 0.2, 0.012], [x, (DECK + 0.17) / 2 - 0.01, s * 0.161], 'block', 'bCasting', undefined, 0.004);
+        rbox(g, [0.014, 0.2, 0.014], [x, 0.06, s * 0.2], 'block', 'bCasting', undefined, 0.004);
+      }
+      rbox(g, [1.1, 0.014, 0.01], [0, 0.36, s * 0.16], 'block', 'bCasting', undefined, 0.003);
+      // engine mount pads at the front corners
+      rbox(g, [0.1, 0.09, 0.03], [0.45, 0.08, s * 0.21], 'block', 'bCasting', undefined, 0.008);
+      for (const dy of [0.05, 0.11]) for (const dx of [0.42, 0.48]) bolt(g, [dx, dy, s * 0.229], s > 0 ? 'z' : '-z', 0.008, 'bCasting');
+    }
+    // coolant core plugs, oil gallery plugs, and the long main oil gallery
     for (const s of [1, -1]) for (let i = 0; i < 6; i++) cyl(g, 0.022, 0.012, [CX(i), 0.3, s * 0.161], 'z', 'steel', 'bCasting');
     cyl(g, 0.02, 1.12, [0, 0.18, 0.15], 'x', 'block', 'bCasting', undefined, 16);
+    for (const x of [0.567, -0.567]) for (const [y, z] of [[0.18, 0.15], [0.3, -0.1], [0.08, 0.12]] as const) bolt(g, [x, y, z], x > 0 ? 'x' : '-x', 0.009, 'bCasting', undefined, 'steel');
+    // tapped head bolt holes and dowels in the deck
+    for (const [x, z] of HEAD_BOLTS) cyl(g, 0.009, 0.002, [x, DECK + 0.0005, z], 'y', 'black', 'bCasting', undefined, 12);
+    for (const x of [0.5, -0.5]) cyl(g, 0.006, 0.012, [x, DECK + 0.004, 0.1], 'y', 'steel', 'bCasting', undefined, 10);
+    // coolant transfer holes beside each bore
+    for (let i = 0; i < 6; i++) for (const z of [0.1, -0.1]) cyl(g, 0.007, 0.002, [CX(i) + 0.05, DECK + 0.0005, z], 'y', 'black', 'bCasting', undefined, 10);
   },
   liners(g, c) {
     for (let i = 0; i < 6; i++) {
@@ -162,30 +258,44 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       put(li, g, [CX(i), 0, 0]);
       li.userData.inst = i;
       c.inst.push(li);
-      cyl(li, 0.0665, 0.245, [0, 0.293, 0], 'y', 'liner', 'lSleeve', [0, 0.12, 0], 40, true);
-      cyl(li, 0.0655, 0.245, [0, 0.293, 0], 'y', 'liner', 'lSleeve', [0, 0.12, 0], 40, true);
-      torus(li, 0.071, 0.006, [0, DECK - 0.004, 0], 'y', 'liner', 'lSleeve', [0, 0.12, 0]);
+      // one turned piece: thin wall, upper seal band, flange that sits in the block counterbore
+      lathe(li, [[0.065, 0.17], [0.0672, 0.17], [0.0672, 0.31], [0.0685, 0.315], [0.0685, DECK - 0.016], [0.0738, DECK - 0.012], [0.0738, DECK], [0.065, DECK], [0.065, 0.17]], [0, 0, 0], 'liner', 'lSleeve', [0, 0.12, 0], 'y', 48);
       for (const y of [0.19, 0.205]) torus(li, 0.067, 0.0035, [0, y, 0], 'y', 'rubber', 'lSeals', [0, -0.05, 0]);
     }
   },
   headGasket(g) {
-    const holes = Array.from({ length: 6 }, (_, i) => [CX(i), 0, 0.066] as [number, number, number]);
+    const holes: [number, number, number][] = Array.from({ length: 6 }, (_, i) => [CX(i), 0, 0.066] as [number, number, number]);
+    for (const [x, z] of HEAD_BOLTS) holes.push([x, z, 0.0085]);
+    for (let i = 0; i < 6; i++) for (const z of [0.1, -0.1]) holes.push([CX(i) + 0.05, z, 0.0065]);
     plate(g, [[-0.56, -0.155], [0.56, -0.155], [0.56, 0.155], [-0.56, 0.155]], holes, DECK, 0.003, 'gasket', 'hgBody');
     for (let i = 0; i < 6; i++) torus(g, 0.0675, 0.0028, [CX(i), DECK + 0.002, 0], 'y', 'steel', 'hgRings', [0, 0.06, 0]);
   },
   head(g) {
-    box(g, [1.12, HEAD_TOP - DECK - 0.003, 0.31], [0, (HEAD_TOP + DECK + 0.003) / 2, 0], 'head', 'hCasting');
+    rbox(g, [1.12, HEAD_TOP - DECK - 0.003, 0.31], [0, (HEAD_TOP + DECK + 0.003) / 2, 0], 'head', 'hCasting', undefined, 0.01);
     for (let i = 0; i < 6; i++) {
-      // port stubs, valve seats and the injector bore on the fire deck (seen when the head is turned over)
-      box(g, [0.1, 0.05, 0.03], [CX(i), 0.49, 0.168], 'head', 'hCasting');
-      box(g, [0.09, 0.045, 0.03], [CX(i), 0.49, -0.168], 'head', 'hCasting');
+      // intake ports (with their flange faces) and exhaust ports with studs
+      rbox(g, [0.1, 0.05, 0.03], [CX(i), 0.49, 0.168], 'head', 'hCasting', undefined, 0.008);
+      rbox(g, [0.09, 0.045, 0.03], [CX(i), 0.49, -0.168], 'head', 'hCasting', undefined, 0.008);
+      // valve seats and the injector bore on the fire deck (seen when the head is turned over)
       for (const [dx, dz] of [[0.025, 0.04], [-0.025, 0.04], [0.025, -0.04], [-0.025, -0.04]] as const) torus(g, 0.019, 0.003, [CX(i) + dx, DECK + 0.003, dz], 'y', 'steel', 'hCasting');
-      for (const s of [1, -1]) cyl(g, 0.012, 0.03, [CX(i) + 0.08, HEAD_TOP + 0.012, s * 0.125], 'y', 'dark', 'hBolts', [0, 0.25, 0], 6);
-      for (const s of [1, -1]) cyl(g, 0.006, 0.14, [CX(i) + 0.08, HEAD_TOP - 0.045, s * 0.125], 'y', 'dark', 'hBolts', [0, 0.25, 0], 6);
+      cyl(g, 0.012, 0.002, [CX(i), DECK + 0.002, 0], 'y', 'copper', 'hCasting', undefined, 16);
+      // side bosses between the ports
+      for (const s of [1, -1]) rbox(g, [0.03, 0.06, 0.012], [CX(i) - 0.08, 0.48, s * 0.159], 'head', 'hCasting', undefined, 0.004);
+      // injector bores and the valve guide bosses on top
+      cyl(g, 0.02, 0.01, [CX(i), HEAD_TOP + 0.005, 0], 'y', 'head', 'hCasting', undefined, 20);
     }
-    for (const s of [1, -1]) cyl(g, 0.012, 0.03, [-0.48, HEAD_TOP + 0.012, s * 0.125], 'y', 'dark', 'hBolts', [0, 0.25, 0], 6);
-    // cam towers
-    for (const x of BULK) box(g, [0.026, 0.05, 0.06], [x, HEAD_TOP + 0.025, 0], 'head', 'hCasting');
+    // head bolts: hex heads with washers on top, long shanks hidden inside until it comes apart
+    for (const [x, z] of HEAD_BOLTS) {
+      bolt(g, [x, HEAD_TOP + 0.007, z], 'y', 0.011, 'hBolts', [0, 0.25, 0]);
+      cyl(g, 0.006, 0.14, [x, HEAD_TOP - 0.065, z], 'y', 'dark', 'hBolts', [0, 0.25, 0], 6);
+    }
+    // cam towers, lifting eyes, coolant outlet
+    for (const x of BULK) rbox(g, [0.026, 0.05, 0.07], [x, HEAD_TOP + 0.025, 0], 'head', 'hCasting', undefined, 0.006);
+    for (const x of [0.5, -0.5]) {
+      rbox(g, [0.06, 0.02, 0.03], [x, HEAD_TOP + 0.01, -0.172], 'forged', 'hCasting', undefined, 0.004);
+      torus(g, 0.022, 0.007, [x, HEAD_TOP + 0.035, -0.172], 'z', 'forged', 'hCasting');
+    }
+    rbox(g, [0.03, 0.06, 0.1], [0.575, 0.49, 0.06], 'head', 'hCasting', undefined, 0.008);
   },
   valves(g, c) {
     for (let i = 0; i < 6; i++) {
@@ -200,10 +310,14 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
         vg.userData.valve = intake ? 'intake' : 'exhaust';
         const sub = intake ? 'vIntake' : 'vExhaust';
         const exv: V = [dx * 3, -0.12, dz * 2.5];
-        cyl(vg, 0.0045, 0.17, [0, DECK + 0.09, 0], 'y', intake ? 'steel' : 'forged', sub, exv, 10);
-        cyl(vg, intake ? 0.02 : 0.018, 0.005, [0, DECK + 0.004, 0], 'y', intake ? 'steel' : 'forged', sub, exv, 24, false, 0.008);
-        helix(vg, 0.013, HEAD_TOP, 0.585, 6, 0.0022, [0, 0, 0], 'spring', 'vSprings', [dx * 3, 0.07, dz * 2.5]);
-        cyl(vg, 0.016, 0.005, [0, 0.587, 0], 'y', 'steel', 'vRetainers', [dx * 3, 0.13, dz * 2.5], 20);
+        const R0 = intake ? 0.02 : 0.018;
+        // tulip valve: stem, radiused neck, 30/45 degree face, margin, keeper grooves at the tip
+        lathe(vg, [[0, DECK], [R0, DECK], [R0, DECK + 0.0025], [R0 - 0.004, DECK + 0.006], [0.009, DECK + 0.011], [0.0055, DECK + 0.02], [0.0045, DECK + 0.03], [0.0045, 0.585], [0.0038, 0.586], [0.0045, 0.588], [0.0045, 0.592], [0, 0.593]], [0, 0, 0], intake ? 'steel' : 'forged', sub, exv, 'y', 24);
+        cyl(vg, 0.009, 0.01, [0, HEAD_TOP + 0.006, 0], 'y', 'rubber', 'vSprings', [dx * 3, 0.07, dz * 2.5], 14); // stem seal
+        cyl(vg, 0.016, 0.0015, [0, HEAD_TOP + 0.001, 0], 'y', 'steel', 'vSprings', [dx * 3, 0.07, dz * 2.5], 18); // spring seat
+        helix(vg, 0.013, HEAD_TOP + 0.002, 0.585, 6, 0.0022, [0, 0, 0], 'spring', 'vSprings', [dx * 3, 0.07, dz * 2.5]);
+        lathe(vg, [[0.0048, 0.584], [0.016, 0.585], [0.016, 0.59], [0.0048, 0.59]], [0, 0, 0], 'steel', 'vRetainers', [dx * 3, 0.13, dz * 2.5], 'y', 20);
+        cyl(vg, 0.0062, 0.006, [0, 0.589, 0], 'y', 'dark', 'vRetainers', [dx * 3, 0.16, dz * 2.5], 10, false, 0.0052); // split keepers
       }
     }
   },
@@ -213,25 +327,64 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       put(ig, g, [CX(i), 0, 0]);
       ig.userData.inst = i;
       c.inst.push(ig);
-      cyl(ig, 0.011, 0.11, [0, 0.47, 0], 'y', 'steel', 'injBody', [0, 0.05, 0], 16);
-      cyl(ig, 0.016, 0.03, [0, 0.54, 0], 'y', 'black', 'injBody', [0, 0.05, 0], 16);
-      cyl(ig, 0.004, 0.008, [0, 0.564, 0], 'y', 'copper', 'injBody', [0, 0.05, 0], 8);
-      cyl(ig, 0.006, 0.05, [0, 0.4, 0], 'y', 'forged', 'injNozzle', [0, -0.06, 0], 12, false, 0.0035);
-      torus(ig, 0.011, 0.0025, [0, 0.43, 0], 'y', 'copper', 'injWasher', [0, -0.02, 0.05]);
-      cyl(ig, 0.004, 0.17, [0, 0.445, 0.085], 'z', 'steel', 'injBody', [0, 0.05, 0], 8); // quill to the rail line
+      // stepped body: nozzle nut, body, fuel inlet boss, solenoid, connector
+      lathe(ig, [[0, 0.375], [0.0025, 0.375], [0.0035, 0.385], [0.0055, 0.4], [0.0055, 0.42], [0.009, 0.425], [0.009, 0.44], [0.0105, 0.445], [0.0105, 0.525], [0.0125, 0.528], [0.0125, 0.536], [0, 0.536]], [0, 0, 0], 'steel', 'injBody', [0, 0.05, 0], 'y', 24);
+      cyl(ig, 0.0035, 0.008, [0, 0.371, 0], 'y', 'forged', 'injNozzle', [0, -0.06, 0], 10, false, 0.0025);
+      cyl(ig, 0.0056, 0.028, [0, 0.405, 0], 'y', 'forged', 'injNozzle', [0, -0.06, 0], 14);
+      cyl(ig, 0.015, 0.03, [0, 0.551, 0], 'y', 'black', 'injBody', [0, 0.05, 0], 20);
+      rbox(ig, [0.022, 0.014, 0.016], [0, 0.574, 0.008], 'black', 'injBody', [0, 0.05, 0], 0.003);
+      for (const dx of [-0.004, 0.004]) cyl(ig, 0.0012, 0.008, [dx, 0.584, 0.008], 'y', 'copper', 'injBody', [0, 0.05, 0], 6);
+      torus(ig, 0.0085, 0.0022, [0, 0.428, 0], 'y', 'copper', 'injWasher', [0, -0.02, 0.05]);
+      // hold-down clamp and bolt
+      rbox(ig, [0.05, 0.008, 0.02], [-0.03, 0.53, 0], 'forged', 'injBody', [0, 0.05, 0], 0.003);
+      bolt(ig, [-0.05, 0.538, 0], 'y', 0.006, 'injBody', [0, 0.05, 0]);
+      // fuel quill to the rail line
+      cyl(ig, 0.004, 0.17, [0, 0.445, 0.085], 'z', 'steel', 'injBody', [0, 0.05, 0], 8);
+      cyl(ig, 0.007, 0.012, [0, 0.445, 0.165], 'z', 'forged', 'injBody', [0, 0.05, 0], 6);
     }
   },
   fuel(g) {
-    cyl(g, 0.022, 0.86, [0.02, 0.36, 0.215], 'x', 'forged', 'fRail', [0, 0.15, 0.12]);
-    for (const x of [-0.41, 0.45]) cyl(g, 0.026, 0.03, [x, 0.36, 0.215], 'x', 'forged', 'fRail', [0, 0.15, 0.12]);
-    box(g, [0.04, 0.025, 0.03], [0.35, 0.36, 0.24], 'black', 'fRail', [0, 0.15, 0.12]);
-    for (let i = 0; i < 6; i++) tube(g, [[CX(i), 0.38, 0.215], [CX(i), 0.42, 0.205], [CX(i), 0.445, 0.175]], 0.0045, 'steel', 'fLines', [0, 0.25, 0.05]);
-    box(g, [0.12, 0.12, 0.1], [0.47, 0.2, 0.235], 'alu', 'fPump', [0.15, -0.1, 0.1]);
-    cyl(g, 0.05, 0.05, [0.47, 0.2, 0.31], 'z', 'alu', 'fPump', [0.15, -0.1, 0.1]);
-    tube(g, [[0.47, 0.26, 0.235], [0.47, 0.33, 0.225], [0.45, 0.36, 0.215]], 0.0045, 'steel', 'fLines', [0, 0.25, 0.05]);
+    const ex: V = [0, 0.15, 0.12];
+    cyl(g, 0.022, 0.86, [0.02, 0.36, 0.215], 'x', 'forged', 'fRail', ex);
+    // rail pressure sensor at the front, pressure relief valve at the back, outlet fittings and mounting brackets
+    lathe(g, [[0.026, 0], [0.026, 0.015], [0.016, 0.02], [0.016, 0.04], [0.012, 0.045], [0.012, 0.06], [0, 0.06]], [0.45, 0.36, 0.215], 'forged', 'fRail', ex, 'x', 6);
+    cyl(g, 0.012, 0.03, [0.52, 0.36, 0.215], 'x', 'black', 'fRail', ex, 16);
+    rbox(g, [0.02, 0.022, 0.016], [0.545, 0.36, 0.215], 'black', 'fRail', ex, 0.003);
+    lathe(g, [[0.026, 0], [0.026, 0.012], [0.015, 0.016], [0.015, 0.05], [0, 0.05]], [-0.41, 0.36, 0.215], 'forged', 'fRail', ex, 'x', 6);
+    (g.children[g.children.length - 1] as THREE.Object3D).rotation.z = Math.PI;
+    for (let i = 0; i < 6; i++) cyl(g, 0.009, 0.02, [CX(i), 0.38, 0.215], 'y', 'forged', 'fRail', ex, 6);
+    for (const x of [0.25, -0.05, -0.33]) {
+      rbox(g, [0.03, 0.05, 0.03], [x, 0.335, 0.195], 'forged', 'fRail', ex, 0.004);
+      bolt(g, [x, 0.32, 0.215], 'z', 0.007, 'fRail', ex);
+    }
+    // high-pressure lines to each injector quill, with their nuts
+    for (let i = 0; i < 6; i++) {
+      tube(g, [[CX(i), 0.39, 0.215], [CX(i), 0.42, 0.205], [CX(i), 0.445, 0.175]], 0.0045, 'steel', 'fLines', [0, 0.25, 0.05]);
+      cyl(g, 0.007, 0.012, [CX(i), 0.445, 0.178], 'z', 'forged', 'fLines', [0, 0.25, 0.05], 6);
+    }
+    // gear-driven high-pressure pump: body, two pumping heads, inlet metering valve, drive flange
+    const pe: V = [0.15, -0.1, 0.1];
+    rbox(g, [0.12, 0.12, 0.1], [0.47, 0.2, 0.235], 'alu', 'fPump', pe, 0.012);
+    for (const x of [0.44, 0.5]) {
+      cyl(g, 0.02, 0.04, [x, 0.275, 0.235], 'y', 'forged', 'fPump', pe, 20);
+      cyl(g, 0.011, 0.015, [x, 0.302, 0.235], 'y', 'forged', 'fPump', pe, 6);
+    }
+    cyl(g, 0.05, 0.05, [0.47, 0.2, 0.31], 'z', 'alu', 'fPump', pe);
+    cyl(g, 0.016, 0.035, [0.47, 0.16, 0.302], 'z', 'black', 'fPump', pe, 18);
+    rbox(g, [0.02, 0.016, 0.014], [0.47, 0.14, 0.32], 'black', 'fPump', pe, 0.003);
+    for (const [dx, dy] of [[0.045, 0.045], [-0.045, 0.045], [0.045, -0.045], [-0.045, -0.045]]) bolt(g, [0.47 + dx, 0.2 + dy, 0.289], 'z', 0.006, 'fPump', pe);
+    cyl(g, 0.008, 0.02, [0.53, 0.2, 0.235], 'x', 'forged', 'fPump', pe, 6); // low-pressure inlet fitting
+    tube(g, [[0.47, 0.31, 0.235], [0.47, 0.34, 0.225], [0.45, 0.36, 0.215]], 0.0045, 'steel', 'fLines', [0, 0.25, 0.05]);
   },
   rockers(g, c) {
     cyl(g, 0.011, 1.1, [0, SHAFT_Y, 0], 'x', 'steel', 'rShaft', [0, 0.18, 0], 14);
+    // rocker shaft pedestals with their bolts, and the end plugs
+    for (const x of BULK) {
+      for (const z of [0.03, -0.03]) box(g, [0.02, 0.06, 0.012], [x, 0.625, z], 'forged', 'rShaft', [0, 0.18, 0]);
+      rbox(g, [0.022, 0.024, 0.074], [x, SHAFT_Y + 0.004, 0], 'forged', 'rShaft', [0, 0.18, 0], 0.005);
+      for (const z of [0.03, -0.03]) bolt(g, [x, SHAFT_Y + 0.02, z], 'y', 0.007, 'rShaft', [0, 0.18, 0]);
+    }
+    for (const x of [0.55, -0.55]) cyl(g, 0.012, 0.006, [x, SHAFT_Y, 0], 'x', 'steel', 'rShaft', [0, 0.18, 0], 16);
     for (let i = 0; i < 6; i++) {
       for (const valve of ['intake', 'exhaust'] as const) {
         const s = valve === 'intake' ? 1 : -1;
@@ -240,18 +393,22 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
         rg.userData.rocker = { cyl: i + 1, valve };
         c.inst.push(rg);
         cyl(rg, 0.017, 0.02, [0, 0, 0], 'x', 'forged', 'rArms', undefined, 20);
+        cyl(rg, 0.0115, 0.021, [0, 0, 0], 'x', 'bearing', 'rArms', undefined, 16); // bushing
         // arm from the hub out to the bridge over the valve pair
         const dx = -s * 0.022, dz = s * 0.04, dy = 0.597 - SHAFT_Y;
         const len = Math.hypot(dx, dz);
-        const arm = box(rg, [0.016, 0.014, len], [dx / 2, dy / 2 + 0.004, dz / 2], 'forged', 'rArms');
+        const arm = rbox(rg, [0.016, 0.016, len], [dx / 2, dy / 2 + 0.004, dz / 2], 'forged', 'rArms', undefined, 0.004);
         arm.rotation.y = Math.atan2(dx, dz);
         arm.rotation.x = Math.atan2(-dy, len) * Math.sign(dz) * -1;
-        cyl(rg, 0.005, 0.03, [dx, dy + 0.012, dz], 'y', 'steel', 'rArms', undefined, 8); // adjusting screw
+        cyl(rg, 0.0045, 0.03, [dx, dy + 0.012, dz], 'y', 'steel', 'rArms', undefined, 8); // adjusting screw
+        cyl(rg, 0.0075, 0.005, [dx, dy + 0.022, dz], 'y', 'dark', 'rArms', undefined, 6); // lock nut
+        cyl(rg, 0.006, 0.005, [dx, dy - 0.003, dz], 'y', 'steel', 'rArms', undefined, 12); // elephant foot
         cyl(rg, 0.008, 0.012, [0, CAM_Y + 0.031 - SHAFT_Y, -s * 0.012], 'x', 'steel', 'rRollers', [0, -0.04, 0], 16);
-        box(rg, [0.012, 0.025, 0.012], [0, -0.016, -s * 0.012], 'forged', 'rArms');
+        cyl(rg, 0.003, 0.02, [0, CAM_Y + 0.031 - SHAFT_Y, -s * 0.012], 'x', 'dark', 'rRollers', [0, -0.04, 0], 8);
+        for (const sx of [1, -1]) box(rg, [0.003, 0.026, 0.014], [sx * 0.0075, -0.016, -s * 0.012], 'forged', 'rArms');
       }
       for (const dz of [0.04, -0.04]) {
-        const br = box(g, [0.07, 0.01, 0.016], [CX(i), 0.594, dz], 'forged', 'rBridges', [0, 0.04, dz * 2]);
+        const br = rbox(g, [0.07, 0.01, 0.016], [CX(i), 0.594, dz], 'forged', 'rBridges', [0, 0.04, dz * 2], 0.003);
         br.userData.bridge = { cyl: i + 1, valve: dz > 0 ? 'intake' : 'exhaust' };
       }
     }
@@ -262,7 +419,10 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
     spin.userData.spin = 'cam';
     c.inst.push(spin);
     cyl(spin, 0.016, 1.12, [0, 0, 0], 'x', 'forged', 'cShaft', undefined, 18);
-    for (const x of BULK) cyl(spin, 0.022, 0.024, [x, 0, 0], 'x', 'steel', 'cShaft', undefined, 22);
+    for (const x of BULK) {
+      cyl(spin, 0.022, 0.024, [x, 0, 0], 'x', 'steel', 'cShaft', undefined, 22);
+      cyl(spin, 0.0035, 0.004, [x, 0.021, 0], 'y', 'black', 'cShaft', undefined, 8); // oil hole
+    }
     const vt = ENGINE_SPEC.valveTiming;
     const peak = { intake: (vt.intakeOpens + vt.intakeCloses) / 2, exhaust: (vt.exhaustOpens + vt.exhaustCloses) / 2 };
     for (let i = 0; i < 6; i++) {
@@ -276,82 +436,191 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
         lobe.rotation.x = (-(peak[valve] + 120 * idx) / 2) * (Math.PI / 180);
       }
     }
+    // thrust flange, gear hub with its bolts, and the timing mark
+    cyl(spin, 0.03, 0.008, [-0.54, 0, 0], 'x', 'steel', 'cShaft', undefined, 24);
     gear(spin, 0.11, 0.03, 48, [-0.6, 0, 0], 'forged', 'cGear', [-0.15, 0, 0]);
+    cyl(spin, 0.035, 0.035, [-0.6, 0, 0], 'x', 'steel', 'cGear', [-0.15, 0, 0], 24);
+    boltCircleX(spin, -0.62, 0, 0, 0.055, 6, '-x', 0.006, 'cGear', [-0.15, 0, 0]);
+    box(spin, [0.032, 0.012, 0.004], [-0.6, 0.1, 0], 'yellow', 'cGear', [-0.15, 0, 0]);
   },
   valveCover(g) {
-    box(g, [1.1, 0.012, 0.3], [0, 0.72, 0], 'alu', 'vcBody', [0, 0.12, 0]);
-    for (const s of [1, -1]) box(g, [1.1, 0.17, 0.012], [0, 0.635, s * 0.145], 'alu', 'vcBody', [0, 0.12, 0]);
-    for (const s of [1, -1]) box(g, [0.012, 0.17, 0.3], [s * 0.545, 0.635, 0], 'alu', 'vcBody', [0, 0.12, 0]);
-    for (let k = 0; k < 5; k++) box(g, [0.9, 0.01, 0.014], [0, 0.73, -0.1 + k * 0.05], 'alu', 'vcBody', [0, 0.12, 0]);
-    cyl(g, 0.03, 0.03, [0.3, 0.74, 0.08], 'y', 'yellow', 'vcCap', [0, 0.25, 0]);
+    const ex: V = [0, 0.12, 0];
+    rbox(g, [1.1, 0.16, 0.3], [0, 0.64, 0], 'alu', 'vcBody', ex, 0.03);
+    rbox(g, [1.13, 0.014, 0.33], [0, 0.563, 0], 'alu', 'vcBody', ex, 0.006); // sealing flange
+    for (let k = 0; k < 5; k++) rbox(g, [0.9, 0.012, 0.014], [0, 0.725, -0.1 + k * 0.05], 'alu', 'vcBody', ex, 0.005);
+    for (let k = 0; k < 7; k++) rbox(g, [0.012, 0.01, 0.22], [-0.45 + k * 0.15, 0.723, 0], 'alu', 'vcBody', ex, 0.004);
+    // isolated cover bolts around the flange
+    for (const s of [1, -1]) boltRow(g, [-0.5, 0.575, s * 0.155], [0.5, 0.575, s * 0.155], 7, 'y', 0.008, 'vcBody', ex);
+    for (const x of [0.555, -0.555]) bolt(g, [x, 0.575, 0], 'y', 0.008, 'vcBody', ex);
+    // oil fill cap with grip, crankcase breather, harness pass-through connector, maker's plate
+    lathe(g, [[0, 0], [0.032, 0], [0.032, 0.012], [0.028, 0.02], [0.028, 0.03], [0, 0.03]], [0.3, 0.722, 0.08], 'yellow', 'vcCap', [0, 0.25, 0], 'y', 32);
+    box(g, [0.05, 0.012, 0.01], [0.3, 0.756, 0.08], 'yellow', 'vcCap', [0, 0.25, 0]);
+    cyl(g, 0.05, 0.05, [-0.38, 0.745, -0.05], 'y', 'black', 'vcBody', ex, 32);
+    cyl(g, 0.018, 0.08, [-0.38, 0.745, -0.12], 'z', 'rubber', 'vcBody', ex, 16);
+    clamp(g, 0.019, [-0.38, 0.745, -0.1], 'z', 'vcBody', ex);
+    rbox(g, [0.05, 0.03, 0.02], [0.1, 0.62, 0.158], 'black', 'vcBody', ex, 0.004);
+    rbox(g, [0.18, 0.006, 0.07], [0.05, 0.721, -0.11], 'dark', 'vcBody', ex, 0.003);
     plate(g, [[-0.555, -0.15], [0.555, -0.15], [0.555, 0.15], [-0.555, 0.15]], [], HEAD_TOP, 0.004, 'rubber', 'vcGasket', [0, -0.04, 0]);
   },
   intakeManifold(g) {
-    box(g, [1.0, 0.09, 0.09], [0, 0.52, 0.27], 'alu', 'imPlenum', [0, 0, 0.12]);
-    for (let i = 0; i < 6; i++) box(g, [0.09, 0.05, 0.07], [CX(i), 0.49, 0.215], 'alu', 'imPlenum', [0, 0, 0.12]);
-    cyl(g, 0.055, 0.12, [0.48, 0.6, 0.27], 'y', 'alu', 'imInlet', [0.12, 0.15, 0.12]);
-    box(g, [0.13, 0.03, 0.13], [0.48, 0.66, 0.27], 'black', 'imInlet', [0.12, 0.15, 0.12]);
+    const ex: V = [0, 0, 0.12];
+    rbox(g, [1.0, 0.09, 0.09], [0, 0.535, 0.27], 'alu', 'imPlenum', ex, 0.03);
+    for (let i = 0; i < 6; i++) {
+      rbox(g, [0.085, 0.055, 0.07], [CX(i), 0.495, 0.215], 'alu', 'imPlenum', ex, 0.014);
+      rbox(g, [0.11, 0.07, 0.008], [CX(i), 0.49, 0.186], 'alu', 'imPlenum', ex, 0.004);
+      for (const dx of [-0.045, 0.045]) bolt(g, [CX(i) + dx, 0.49, 0.193], 'z', 0.006, 'imPlenum', ex);
+    }
+    for (let k = 0; k < 8; k++) rbox(g, [0.008, 0.07, 0.01], [-0.42 + k * 0.12, 0.535, 0.318], 'alu', 'imPlenum', ex, 0.003);
+    // boost (pressure + temperature) sensor on top
+    cyl(g, 0.012, 0.03, [0.2, 0.592, 0.27], 'y', 'black', 'imPlenum', ex, 16);
+    rbox(g, [0.022, 0.014, 0.016], [0.2, 0.612, 0.278], 'black', 'imPlenum', ex, 0.003);
+    // grid heater between the inlet and the plenum, then the charge-air inlet elbow and hose
+    const ie: V = [0.12, 0.15, 0.12];
+    rbox(g, [0.13, 0.025, 0.13], [0.48, 0.592, 0.27], 'dark', 'imInlet', ie, 0.004);
+    for (const dz of [-0.04, 0.04]) {
+      cyl(g, 0.006, 0.03, [0.548, 0.592, 0.27 + dz], 'x', 'copper', 'imInlet', ie, 8);
+      cyl(g, 0.009, 0.006, [0.565, 0.592, 0.27 + dz], 'x', 'dark', 'imInlet', ie, 6);
+    }
+    tube(g, [[0.48, 0.6, 0.27], [0.48, 0.68, 0.27], [0.5, 0.75, 0.27], [0.56, 0.78, 0.27]], 0.05, 'alu', 'imInlet', ie);
+    clamp(g, 0.053, [0.48, 0.64, 0.27], 'y', 'imInlet', ie);
+    cyl(g, 0.054, 0.08, [0.6, 0.78, 0.27], 'x', 'rubber', 'imInlet', ie, 28);
+    for (const x of [0.575, 0.625]) clamp(g, 0.056, [x, 0.78, 0.27], 'x', 'imInlet', ie);
   },
   exhaustManifold(g) {
     for (const [sub, x0, x1, ex] of [['emFront', 0.0, 0.48, 0.12], ['emRear', -0.48, 0.0, -0.12]] as const) {
-      cyl(g, 0.042, x1 - x0 - 0.01, [(x0 + x1) / 2, 0.49, -0.255], 'x', 'exh', sub, [ex, 0, -0.1], 24);
+      const e: V = [ex, 0, -0.1];
+      cyl(g, 0.042, x1 - x0 - 0.03, [(x0 + x1) / 2 + (ex > 0 ? 0.01 : -0.01), 0.49, -0.255], 'x', 'exh', sub, e, 24);
       for (let i = 0; i < 6; i++) {
         if (CX(i) > x0 && CX(i) < x1) {
-          box(g, [0.075, 0.045, 0.07], [CX(i), 0.49, -0.205], 'exh', sub, [ex, 0, -0.1]);
-          box(g, [0.11, 0.065, 0.006], [CX(i), 0.49, -0.171], 'gasket', 'emGasket', [ex, 0, -0.03]);
+          // runner from the port into the log, flange with studs and nuts
+          tube(g, [[CX(i), 0.49, -0.185], [CX(i), 0.49, -0.215], [CX(i) + (ex > 0 ? -0.01 : 0.01), 0.49, -0.245]], 0.03, 'exh', sub, e);
+          rbox(g, [0.11, 0.065, 0.012], [CX(i), 0.49, -0.188], 'exh', sub, e, 0.006);
+          for (const dx of [-0.042, 0.042]) {
+            cyl(g, 0.0045, 0.03, [CX(i) + dx, 0.49, -0.192], 'z', 'steel', sub, e, 8);
+            cyl(g, 0.0075, 0.008, [CX(i) + dx, 0.49, -0.198], 'z', 'dark', sub, e, 6);
+          }
+          rbox(g, [0.11, 0.065, 0.004], [CX(i), 0.49, -0.181], 'gasket', 'emGasket', [ex, 0, -0.03], 0.002);
         }
       }
     }
+    // slip joint between the halves: bellows rings
+    for (const x of [-0.012, -0.004, 0.004, 0.012]) torus(g, 0.043, 0.004, [x, 0.49, -0.255], 'x', 'steel', 'emRear', [-0.12, 0, -0.1]);
+    // riser to the turbo with its mounting flange and studs
     cyl(g, 0.045, 0.12, [-0.02, 0.56, -0.27], 'y', 'exh', 'emRear', [-0.12, 0, -0.1], 24);
+    rbox(g, [0.11, 0.014, 0.11], [-0.02, 0.62, -0.27], 'exh', 'emRear', [-0.12, 0, -0.1], 0.005);
+    for (const [dx, dz] of [[0.042, 0.042], [-0.042, 0.042], [0.042, -0.042], [-0.042, -0.042]]) cyl(g, 0.007, 0.012, [-0.02 + dx, 0.632, -0.27 + dz], 'y', 'dark', 'emRear', [-0.12, 0, -0.1], 6);
   },
   turbo(g) {
     const X = -0.02, Y = 0.68, Z = -0.27;
-    torus(g, 0.07, 0.04, [X - 0.06, Y, Z], 'x', 'exh', 'tTurbHsg', [-0.2, 0, 0]);
-    cyl(g, 0.045, 0.06, [X - 0.06, Y, Z], 'x', 'exh', 'tTurbHsg', [-0.2, 0, 0]);
-    cyl(g, 0.04, 0.09, [X - 0.06, Y, Z - 0.1], 'z', 'exh', 'tTurbHsg', [-0.2, 0, 0]);
+    const te: V = [-0.2, 0, 0], ce: V = [0.22, 0, 0], he: V = [0, 0.1, -0.1];
+    // turbine housing (volute), outlet and the VGT actuator
+    torus(g, 0.07, 0.04, [X - 0.06, Y, Z], 'x', 'exh', 'tTurbHsg', te);
+    cyl(g, 0.045, 0.06, [X - 0.06, Y, Z], 'x', 'exh', 'tTurbHsg', te);
+    lathe(g, [[0.04, 0], [0.04, 0.07], [0.05, 0.075], [0.05, 0.09], [0.04, 0.09]], [X - 0.06, Y, Z - 0.04], 'exh', 'tTurbHsg', te, 'z', 32);
+    (g.children[g.children.length - 1] as THREE.Object3D).rotation.y = Math.PI;
+    rbox(g, [0.06, 0.05, 0.05], [X - 0.08, Y + 0.09, Z + 0.06], 'black', 'tTurbHsg', te, 0.01);
+    rbox(g, [0.022, 0.016, 0.018], [X - 0.05, Y + 0.12, Z + 0.06], 'black', 'tTurbHsg', te, 0.003);
+    tube(g, [[X - 0.08, Y + 0.065, Z + 0.06], [X - 0.08, Y + 0.05, Z + 0.045], [X - 0.065, Y + 0.035, Z + 0.035]], 0.003, 'steel', 'tTurbHsg', te);
+    // center (bearing) housing, V-band clamps, oil feed and drain, coolant lines
     cyl(g, 0.036, 0.07, [X + 0.02, Y, Z], 'x', 'dark', 'tCenter');
-    torus(g, 0.068, 0.036, [X + 0.1, Y, Z], 'x', 'alu', 'tCompHsg', [0.22, 0, 0]);
-    cyl(g, 0.04, 0.12, [X + 0.18, Y, Z], 'x', 'alu', 'tCompHsg', [0.22, 0, 0]);
+    for (const x of [X - 0.012, X + 0.052]) torus(g, 0.047, 0.006, [x, Y, Z], 'x', 'steel', 'tCenter');
+    tube(g, [[X + 0.02, Y + 0.035, Z], [X + 0.05, Y + 0.045, Z + 0.08], [X + 0.09, Y - 0.1, Z + 0.11], [X + 0.1, Y - 0.25, Z + 0.1]], 0.0045, 'steel', 'tCenter', he);
+    tube(g, [[X + 0.02, Y - 0.035, Z], [X + 0.03, Y - 0.06, Z + 0.06], [X + 0.04, Y - 0.15, Z + 0.09], [X + 0.04, Y - 0.32, Z + 0.1]], 0.011, 'rubber', 'tCenter', he);
+    // compressor housing, inlet bell and outlet
+    torus(g, 0.068, 0.036, [X + 0.1, Y, Z], 'x', 'alu', 'tCompHsg', ce);
+    lathe(g, [[0.04, 0], [0.042, 0.06], [0.05, 0.068], [0.05, 0.075], [0.04, 0.075]], [X + 0.12, Y, Z], 'alu', 'tCompHsg', ce, 'x', 36);
+    clamp(g, 0.044, [X + 0.18, Y, Z], 'x', 'tCompHsg', ce);
+    tube(g, [[X + 0.1, Y + 0.1, Z + 0.02], [X + 0.1, Y + 0.16, Z + 0.06], [X + 0.18, Y + 0.18, Z + 0.12]], 0.032, 'alu', 'tCompHsg', ce);
     // wheels and shaft, hidden inside until the housings come off
     cyl(g, 0.006, 0.2, [X + 0.02, Y, Z], 'x', 'steel', 'tShaft', [-0.08, -0.14, 0], 10);
-    const wheel = (x: number, r: number, m: string, sub: string, ex: V) => {
-      cyl(g, r * 0.35, 0.03, [x, Y, Z], 'x', m, sub, ex, 16);
-      for (let k = 0; k < 11; k++) {
-        const b = box(g, [0.026, r, 0.003], [x, Y, Z], m, sub, ex);
-        b.rotation.x = (k / 11) * Math.PI * 2;
+    cyl(g, 0.009, 0.01, [X + 0.11, Y, Z], 'x', 'dark', 'tShaft', [-0.08, -0.14, 0], 6);
+    const wheel = (x: number, r: number, m: string, sub: string, ex: V, n: number, back: number) => {
+      lathe(g, [[0, -0.015], [r * 0.4, -0.015], [r, -0.012 * back], [r * 0.95, -0.009 * back], [r * 0.3, 0.015], [0, 0.015]], [x, Y, Z], m, sub, ex, 'x', 28);
+      for (let k = 0; k < n; k++) {
+        const b = box(g, [0.026, r, 0.0025], [x, Y, Z], m, sub, ex);
+        b.rotation.x = (k / n) * Math.PI * 2;
         b.geometry.translate(0, r / 2, 0);
+        b.geometry.rotateY(0.25);
       }
     };
-    wheel(X - 0.06, 0.04, 'forged', 'tShaft', [-0.08, -0.14, 0]);
-    wheel(X + 0.1, 0.038, 'alu', 'tCompWheel', [0.1, -0.14, 0]);
+    wheel(X - 0.06, 0.04, 'forged', 'tShaft', [-0.08, -0.14, 0], 11, 1);
+    wheel(X + 0.1, 0.038, 'alu', 'tCompWheel', [0.1, -0.14, 0], 14, -1);
   },
   damper(g, c) {
     const spin = new THREE.Group();
     put(spin, g, [0, 0, 0]);
     spin.userData.spin = 'crank';
     c.inst.push(spin);
-    cyl(spin, 0.15, 0.055, [0.66, 0, 0], 'x', 'dark', 'dHousing', [0.08, 0, 0], 40);
+    lathe(spin, [[0.05, -0.028], [0.145, -0.028], [0.15, -0.023], [0.15, 0.023], [0.145, 0.028], [0.05, 0.028]], [0.66, 0, 0], 'dark', 'dHousing', [0.08, 0, 0], 'x', 56);
+    torus(spin, 0.12, 0.003, [0.689, 0, 0], 'x', 'dark', 'dHousing', [0.08, 0, 0]); // weld seam of the sealed housing
+    box(spin, [0.004, 0.02, 0.006], [0.69, 0.13, 0], 'yellow', 'dHousing', [0.08, 0, 0]); // timing mark
     cyl(spin, 0.1, 0.05, [0.72, 0, 0], 'x', 'forged', 'dPulley', [0.18, 0, 0], 36);
-    for (const x of [0.705, 0.72, 0.735]) torus(spin, 0.1, 0.004, [x, 0, 0], 'x', 'dark', 'dPulley', [0.18, 0, 0]);
-    for (let k = 0; k < 6; k++) cyl(spin, 0.008, 0.01, [0.75, Math.cos(k) * 0.05, Math.sin(k) * 0.05], 'x', 'steel', 'dPulley', [0.18, 0, 0], 6);
+    for (const x of [0.703, 0.711, 0.719, 0.727, 0.735]) torus(spin, 0.1, 0.0028, [x, 0, 0], 'x', 'dark', 'dPulley', [0.18, 0, 0]);
+    cyl(spin, 0.045, 0.02, [0.755, 0, 0], 'x', 'steel', 'dPulley', [0.18, 0, 0], 24);
+    boltCircleX(spin, 0.769, 0, 0, 0.032, 6, 'x', 0.007, 'dPulley', [0.18, 0, 0]);
   },
   waterPump(g) {
-    box(g, [0.06, 0.16, 0.16], [0.6, 0.3, -0.04], 'alu', 'wpBody', [0.12, 0, 0]);
-    cyl(g, 0.07, 0.03, [0.66, 0.3, -0.04], 'x', 'forged', 'wpBody', [0.2, 0, 0], 32);
-    cyl(g, 0.045, 0.012, [0.635, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.3, 0, 0], 12);
-    box(g, [0.08, 0.06, 0.08], [0.6, 0.48, 0.06], 'alu', 'wpStat', [0.1, 0.12, 0]);
-    cyl(g, 0.03, 0.05, [0.6, 0.53, 0.06], 'y', 'alu', 'wpStat', [0.1, 0.12, 0]);
-    cyl(g, 0.022, 0.03, [0.6, 0.47, 0.06], 'y', 'copper', 'wpStat', [0.1, 0.2, 0.1]);
+    const ex: V = [0.12, 0, 0];
+    // volute housing bolted to the front of the block, with the outlet to the oil cooler
+    lathe(g, [[0, 0], [0.085, 0], [0.09, 0.01], [0.09, 0.05], [0.07, 0.06], [0, 0.06]], [0.57, 0.3, -0.04], 'alu', 'wpBody', ex, 'x', 40);
+    rbox(g, [0.05, 0.1, 0.06], [0.595, 0.22, 0.04], 'alu', 'wpBody', ex, 0.012);
+    boltCircleX(g, 0.633, 0.3, -0.04, 0.058, 6, 'x', 0.006, 'wpBody', ex, 'dark', 0.3);
+    // bearing hub, pulley with poly-V grooves, weep hole
+    cyl(g, 0.025, 0.04, [0.65, 0.3, -0.04], 'x', 'alu', 'wpBody', [0.2, 0, 0], 20);
+    cyl(g, 0.07, 0.03, [0.685, 0.3, -0.04], 'x', 'forged', 'wpBody', [0.2, 0, 0], 32);
+    for (const x of [0.675, 0.683, 0.691]) torus(g, 0.07, 0.0026, [x, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.2, 0, 0]);
+    boltCircleX(g, 0.703, 0.3, -0.04, 0.03, 4, 'x', 0.006, 'wpBody', [0.2, 0, 0]);
+    cyl(g, 0.003, 0.004, [0.645, 0.274, -0.04], 'y', 'black', 'wpBody', ex, 8);
+    // impeller inside, seen when it comes apart
+    cyl(g, 0.045, 0.012, [0.575, 0.3, -0.04], 'x', 'dark', 'wpBody', [0.3, 0, 0], 12);
+    for (let k = 0; k < 6; k++) {
+      const v = box(g, [0.012, 0.04, 0.003], [0.567, 0.3, -0.04], 'dark', 'wpBody', [0.3, 0, 0]);
+      v.rotation.x = (k / 6) * Math.PI * 2;
+      v.geometry.translate(0, 0.02, 0);
+    }
+    // thermostat housing: two thermostats, outlet neck to the radiator hose
+    const se: V = [0.1, 0.12, 0];
+    rbox(g, [0.08, 0.06, 0.12], [0.6, 0.48, 0.06], 'alu', 'wpStat', se, 0.012);
+    lathe(g, [[0.03, 0], [0.03, 0.04], [0.033, 0.045], [0.03, 0.05], [0.03, 0.06], [0, 0.06]], [0.6, 0.51, 0.04], 'alu', 'wpStat', se, 'y', 28);
+    for (const [dx, dz] of [[0.03, 0.04], [-0.03, 0.04], [0.03, -0.04], [-0.03, -0.04]] as const) bolt(g, [0.6 + dx, 0.514, 0.06 + dz], 'y', 0.006, 'wpStat', se);
+    for (const dz of [-0.025, 0.025]) {
+      cyl(g, 0.022, 0.004, [0.6, 0.45, 0.06 + dz], 'y', 'steel', 'wpStat', [0.1, 0.2, 0.1], 24);
+      cyl(g, 0.009, 0.03, [0.6, 0.432, 0.06 + dz], 'y', 'copper', 'wpStat', [0.1, 0.2, 0.1], 16);
+      helix(g, 0.011, 0.43, 0.448, 4, 0.0012, [0.6, 0, 0.06 + dz], 'steel', 'wpStat', [0.1, 0.2, 0.1]);
+    }
   },
   frontCover(g) {
-    box(g, [0.014, 0.44, 0.36], [0.575, 0.17, 0], 'alu', 'fcCover', [0.12, 0, 0]);
-    torus(g, 0.045, 0.008, [0.585, 0, 0], 'x', 'rubber', 'fcSeal', [0.2, 0, 0]);
+    const ex: V = [0.12, 0, 0];
+    rbox(g, [0.016, 0.44, 0.36], [0.575, 0.17, 0], 'alu', 'fcCover', ex, 0.006);
+    for (const y of [0.0, 0.3]) rbox(g, [0.01, 0.012, 0.3], [0.587, y, 0], 'alu', 'fcCover', ex, 0.004);
+    for (const z of [-0.12, 0.12]) rbox(g, [0.01, 0.38, 0.012], [0.587, 0.17, z], 'alu', 'fcCover', ex, 0.004);
+    for (const z of [-0.165, 0.165]) boltRow(g, [0.586, -0.03, z], [0.586, 0.37, z], 5, 'x', 0.007, 'fcCover', ex);
+    boltRow(g, [0.586, 0.375, -0.1], [0.586, 0.375, 0.1], 3, 'x', 0.007, 'fcCover', ex);
+    boltRow(g, [0.586, -0.035, -0.1], [0.586, -0.035, 0.1], 3, 'x', 0.007, 'fcCover', ex);
+    cyl(g, 0.058, 0.012, [0.586, 0, 0], 'x', 'alu', 'fcCover', ex, 32);
+    torus(g, 0.045, 0.008, [0.593, 0, 0], 'x', 'rubber', 'fcSeal', [0.2, 0, 0]);
+    torus(g, 0.052, 0.002, [0.593, 0, 0], 'x', 'steel', 'fcSeal', [0.2, 0, 0]);
   },
   oilModule(g) {
-    box(g, [0.36, 0.13, 0.06], [-0.16, 0.24, 0.215], 'alu', 'omHousing', [0, 0, 0.1]);
+    const ex: V = [0, 0, 0.1];
+    rbox(g, [0.36, 0.13, 0.06], [-0.16, 0.24, 0.215], 'alu', 'omHousing', ex, 0.012);
+    // plate-type oil cooler stack (coolant on one side, oil on the other)
+    for (let k = 0; k < 12; k++) rbox(g, [0.3, 0.09, 0.0035], [-0.16, 0.25, 0.25 + k * 0.006], 'alu', 'omHousing', ex, 0.0015);
+    rbox(g, [0.31, 0.1, 0.008], [-0.16, 0.25, 0.322], 'alu', 'omHousing', ex, 0.003);
+    boltRow(g, [-0.3, 0.29, 0.329], [-0.02, 0.29, 0.329], 4, 'z', 0.006, 'omHousing', ex);
+    boltRow(g, [-0.3, 0.21, 0.329], [-0.02, 0.21, 0.329], 4, 'z', 0.006, 'omHousing', ex);
+    // oil pressure sensor and the filter heads
+    cyl(g, 0.01, 0.03, [0.03, 0.27, 0.23], 'x', 'black', 'omHousing', ex, 16);
+    rbox(g, [0.016, 0.02, 0.016], [0.05, 0.27, 0.23], 'black', 'omHousing', ex, 0.003);
     for (const x of [-0.26, -0.08]) {
-      cyl(g, 0.052, 0.22, [x, 0.07, 0.23], 'y', 'blue', 'omFilters', [0, -0.15, 0.12], 28);
-      cyl(g, 0.045, 0.02, [x, -0.05, 0.23], 'y', 'dark', 'omFilters', [0, -0.15, 0.12], 6);
+      cyl(g, 0.058, 0.03, [x, 0.19, 0.23], 'y', 'alu', 'omHousing', ex, 32);
+      const fe: V = [0, -0.15, 0.12];
+      lathe(g, [[0, -0.11], [0.04, -0.11], [0.05, -0.1], [0.052, -0.08], [0.052, 0.09], [0.054, 0.095], [0.054, 0.105], [0.045, 0.11], [0, 0.11]], [x, 0.065, 0.23], 'blue', 'omFilters', fe, 'y', 36);
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        box(g, [0.006, 0.012, 0.006], [x + Math.cos(a) * 0.053, 0.163, 0.23 + Math.sin(a) * 0.053], 'blue', 'omFilters', fe);
+      }
+      cyl(g, 0.012, 0.012, [x, -0.05, 0.23], 'y', 'dark', 'omFilters', fe, 6);
     }
   },
   flywheel(g, c) {
@@ -359,39 +628,106 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
     put(spin, g, [0, 0, 0]);
     spin.userData.spin = 'crank';
     c.inst.push(spin);
-    cyl(spin, 0.235, 0.05, [-0.66, 0, 0], 'x', 'forged', 'fwBody', undefined, 48);
-    cyl(spin, 0.17, 0.004, [-0.687, 0, 0], 'x', 'steel', 'fwBody', undefined, 48);
+    lathe(spin, [[0.06, -0.025], [0.228, -0.025], [0.235, -0.018], [0.235, 0.025], [0.06, 0.025]], [-0.66, 0, 0], 'forged', 'fwBody', undefined, 'x', 64);
+    lathe(spin, [[0.09, 0], [0.17, 0], [0.17, 0.004], [0.09, 0.004]], [-0.685, 0, 0], 'steel', 'fwBody', undefined, 'x', 64);
+    (spin.children[spin.children.length - 1] as THREE.Object3D).rotation.z = Math.PI;
     gear(spin, 0.245, 0.03, 90, [-0.66, 0, 0], 'steel', 'fwRing', [-0.12, 0, 0]);
-    for (let k = 0; k < 8; k++) cyl(spin, 0.01, 0.01, [-0.688, Math.cos(k * 0.785) * 0.06, Math.sin(k * 0.785) * 0.06], 'x', 'dark', 'fwBody', undefined, 6);
+    for (let k = 0; k < 8; k++) bolt(spin, [-0.688, Math.cos(k * 0.785) * 0.06, Math.sin(k * 0.785) * 0.06], '-x', 0.009, 'fwBody');
+    for (let k = 0; k < 6; k++) cyl(spin, 0.007, 0.004, [-0.687, Math.cos(k * 1.047 + 0.3) * 0.2, Math.sin(k * 1.047 + 0.3) * 0.2], 'x', 'black', 'fwBody', undefined, 12); // clutch cover bolt holes
+    cyl(spin, 0.02, 0.012, [-0.688, 0, 0], 'x', 'steel', 'fwBody', undefined, 20); // pilot bearing
+    for (const a of [0.8, 2.6, 4.1]) cyl(spin, 0.012, 0.004, [-0.636, Math.cos(a) * 0.2, Math.sin(a) * 0.2], 'x', 'black', 'fwBody', undefined, 12); // balance drillings
+    // crank position sensor target holes drilled in the rim
+    for (let k = 0; k < 36; k++) {
+      if (k % 18 === 17) continue; // missing tooth gap marks TDC
+      const a = (k / 36) * Math.PI * 2;
+      cyl(spin, 0.005, 0.003, [-0.639, Math.cos(a) * 0.236, Math.sin(a) * 0.236], 'z', 'black', 'fwBody', undefined, 8).lookAt(new THREE.Vector3(-0.639, 0, 0));
+    }
   },
   flywheelHousing(g) {
-    cyl(g, 0.29, 0.1, [-0.635, 0, 0], 'x', 'block', 'fhHousing', [-0.25, 0, 0], 48, true, 0.31);
+    const ex: V = [-0.25, 0, 0];
+    cyl(g, 0.29, 0.1, [-0.635, 0, 0], 'x', 'block', 'fhHousing', ex, 48, true, 0.31);
     profileX(g, (sh) => {
       sh.absarc(0, 0, 0.29, 0, Math.PI * 2, false);
       const h = new THREE.Path();
       h.absarc(0, 0, 0.09, 0, Math.PI * 2, true);
       sh.holes.push(h);
-    }, 0.014, [-0.59, 0, 0], 'block', 'fhHousing', [-0.25, 0, 0]);
-    box(g, [0.04, 0.5, 0.2], [-0.595, 0.4, 0], 'block', 'fhHousing', [-0.25, 0, 0]);
-    gear(g, 0.075, 0.03, 34, [-0.575, 0.16, 0.06], 'forged', 'fhGears', [-0.08, 0, 0.12]);
-    gear(g, 0.065, 0.03, 30, [-0.575, 0.34, 0.03], 'forged', 'fhGears', [-0.08, 0, 0.12]);
-    gear(g, 0.06, 0.03, 28, [-0.575, 0.48, -0.03], 'forged', 'fhGears', [-0.08, 0, 0.12]);
+    }, 0.014, [-0.59, 0, 0], 'block', 'fhHousing', ex);
+    // radial ribs, transmission bolt bosses on the rim (SAE 1 bolt circle), starter pad
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2 + 0.13;
+      const rib = box(g, [0.08, 0.012, 0.02], [-0.635, Math.cos(a) * 0.3, Math.sin(a) * 0.3], 'block', 'fhHousing', ex);
+      rib.rotation.x = -a;
+      bolt(g, [-0.69, Math.cos(a) * 0.3, Math.sin(a) * 0.3], '-x', 0.009, 'fhHousing', ex);
+    }
+    rbox(g, [0.07, 0.13, 0.05], [-0.64, -0.12, 0.3], 'block', 'fhHousing', ex, 0.01);
+    for (const y of [-0.165, -0.075]) bolt(g, [-0.64, y, 0.329], 'z', 0.009, 'fhHousing', ex);
+    cyl(g, 0.02, 0.01, [-0.64, -0.2, -0.29], 'z', 'dark', 'fhHousing', ex, 6); // timing pin access plug
+    // rear gear train housing and its cover with bolts
+    rbox(g, [0.04, 0.5, 0.2], [-0.595, 0.4, 0], 'block', 'fhHousing', ex, 0.012);
+    boltRow(g, [-0.617, 0.18, 0.09], [-0.617, 0.63, 0.09], 5, '-x', 0.007, 'fhHousing', ex);
+    boltRow(g, [-0.617, 0.18, -0.09], [-0.617, 0.63, -0.09], 5, '-x', 0.007, 'fhHousing', ex);
+    // gear train: crank gear drives idlers up to the cam; each gear on a hub
+    const ge: V = [-0.08, 0, 0.12];
+    for (const [y, z, r, n] of [[0.16, 0.06, 0.075, 34], [0.34, 0.03, 0.065, 30], [0.48, -0.03, 0.06, 28]] as const) {
+      gear(g, r, 0.03, n, [-0.575, y, z], 'forged', 'fhGears', ge);
+      cyl(g, 0.022, 0.035, [-0.575, y, z], 'x', 'steel', 'fhGears', ge, 20);
+      boltCircleX(g, -0.592, y, z, 0.014, 3, '-x', 0.005, 'fhGears', ge);
+    }
   },
   oilPan(g) {
-    const Y0 = -0.05, Y1 = -0.31;
-    box(g, [1.12, 0.012, 0.38], [0, Y1, 0], 'pan', 'opPan');
-    for (const s of [1, -1]) box(g, [1.12, Y0 - Y1, 0.012], [0, (Y0 + Y1) / 2, s * 0.19], 'pan', 'opPan');
-    for (const s of [1, -1]) box(g, [0.012, Y0 - Y1, 0.38], [s * 0.56, (Y0 + Y1) / 2, 0], 'pan', 'opPan');
-    for (const s of [1, -1]) box(g, [1.14, 0.01, 0.03], [0, Y0, s * 0.2], 'pan', 'opPan');
-    cyl(g, 0.016, 0.03, [0.35, Y1 - 0.015, 0.12], 'y', 'steel', 'opPlug', [0, -0.1, 0], 6);
+    const ex: V = [0, 0, 0];
+    const Y0 = -0.05, Y1 = -0.31, YS = -0.17, XS = -0.12;
+    // deep sump at the front (under the pickup), shallow section at the back
+    rbox(g, [0.56 - XS, 0.012, 0.38], [(0.56 + XS) / 2, Y1, 0], 'pan', 'opPan', ex, 0.004);
+    rbox(g, [XS + 0.56, 0.012, 0.38], [(XS - 0.56) / 2, YS, 0], 'pan', 'opPan', ex, 0.004);
+    for (const s of [1, -1]) {
+      rbox(g, [0.56 - XS, Y0 - Y1, 0.012], [(0.56 + XS) / 2, (Y0 + Y1) / 2, s * 0.19], 'pan', 'opPan', ex, 0.004);
+      rbox(g, [XS + 0.56, Y0 - YS, 0.012], [(XS - 0.56) / 2, (Y0 + YS) / 2, s * 0.19], 'pan', 'opPan', ex, 0.004);
+      // flange with bolts all the way round
+      rbox(g, [1.14, 0.01, 0.03], [0, Y0, s * 0.2], 'pan', 'opPan', ex, 0.003);
+      boltRow(g, [-0.52, Y0 - 0.009, s * 0.205], [0.52, Y0 - 0.009, s * 0.205], 10, '-y', 0.007, 'opPan', ex);
+      // stiffening ribs
+      for (let k = 0; k < 4; k++) rbox(g, [0.012, Y0 - Y1 - 0.04, 0.01], [0.05 + k * 0.15, (Y0 + Y1) / 2, s * 0.198], 'pan', 'opPan', ex, 0.003);
+    }
+    rbox(g, [0.012, Y0 - Y1, 0.38], [0.56, (Y0 + Y1) / 2, 0], 'pan', 'opPan', ex, 0.004);
+    rbox(g, [0.012, Y0 - YS, 0.38], [-0.56, (Y0 + YS) / 2, 0], 'pan', 'opPan', ex, 0.004);
+    rbox(g, [0.012, YS - Y1, 0.38], [XS, (YS + Y1) / 2, 0], 'pan', 'opPan', ex, 0.004);
+    for (const x of [0.56, -0.56]) {
+      rbox(g, [0.03, 0.01, 0.4], [x, Y0, 0], 'pan', 'opPan', ex, 0.003);
+      boltRow(g, [x, Y0 - 0.009, -0.15], [x, Y0 - 0.009, 0.15], 4, '-y', 0.007, 'opPan', ex);
+    }
+    for (let k = 0; k < 3; k++) rbox(g, [0.6, 0.008, 0.012], [0.22, Y1 - 0.009, -0.12 + k * 0.12], 'pan', 'opPan', ex, 0.003);
+    // magnetic drain plug, oil level sensor, dipstick tube and handle
+    bolt(g, [0.35, Y1 - 0.012, 0.12], '-y', 0.014, 'opPlug', [0, -0.1, 0], 'steel');
+    cyl(g, 0.018, 0.02, [0.0, YS - 0.012, 0.0], 'y', 'black', 'opPan', ex, 16);
+    tube(g, [[0.15, -0.1, 0.197], [0.15, 0.1, 0.22], [0.15, 0.3, 0.255], [0.15, 0.43, 0.262]], 0.006, 'steel', 'opPan', ex);
+    torus(g, 0.016, 0.004, [0.15, 0.452, 0.262], 'z', 'yellow', 'opPan', ex);
   },
   oilPump(g) {
-    box(g, [0.14, 0.08, 0.12], [0.32, -0.15, 0], 'block', 'pBody', [0, 0.08, 0]);
+    const ex: V = [0, 0.08, 0];
+    rbox(g, [0.14, 0.08, 0.12], [0.32, -0.15, 0], 'block', 'pBody', ex, 0.01);
+    for (const [dx, dz] of [[0.055, 0.045], [-0.055, 0.045], [0.055, -0.045], [-0.055, -0.045]] as const) bolt(g, [0.32 + dx, -0.105, dz], 'y', 0.007, 'pBody', ex);
     cyl(g, 0.03, 0.02, [0.32, -0.15, 0.065], 'z', 'steel', 'pBody', [0, 0.08, 0.1], 16);
-    tube(g, [[0.28, -0.19, 0], [0.22, -0.24, 0], [0.12, -0.27, 0]], 0.014, 'steel', 'pPickup', [0, -0.05, 0]);
-    cyl(g, 0.05, 0.012, [0.1, -0.285, 0], 'y', 'steel', 'pPickup', [0, -0.05, 0], 24);
+    gear(g, 0.03, 0.02, 14, [0.32, -0.15, 0.08], 'forged', 'pBody', [0, 0.08, 0.14]).rotation.y = Math.PI / 2;
+    cyl(g, 0.016, 0.04, [0.38, -0.15, -0.03], 'x', 'block', 'pBody', ex, 16); // relief valve boss
+    cyl(g, 0.012, 0.006, [0.403, -0.15, -0.03], 'x', 'dark', 'pBody', ex, 6);
+    const pe: V = [0, -0.05, 0];
+    tube(g, [[0.28, -0.19, 0], [0.22, -0.24, 0], [0.12, -0.27, 0]], 0.014, 'steel', 'pPickup', pe);
+    rbox(g, [0.04, 0.008, 0.04], [0.28, -0.192, 0], 'steel', 'pPickup', pe, 0.003);
+    lathe(g, [[0.016, 0.012], [0.05, 0.004], [0.05, 0], [0.016, 0]], [0.1, -0.29, 0], 'steel', 'pPickup', pe, 'y', 32);
+    // screen mesh
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(0.048, 24), new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.7, roughness: 0.4, wireframe: true }));
+    mesh.rotation.x = Math.PI / 2;
+    put(mesh, g, [0.1, -0.292, 0], 'pPickup', pe);
+    // support bracket to a main cap
+    rbox(g, [0.012, 0.06, 0.02], [0.16, -0.24, 0.02], 'steel', 'pPickup', pe, 0.003);
   },
   pistons(g, c) {
+    // valve reliefs and bowl as a turned profile: skirt, three ring grooves, crown with a re-entrant "Mexican hat" bowl
+    const prof: [number, number][] = [[0.058, -0.055], [0.0645, -0.055], [0.0645, -0.01]];
+    for (const gy of [CH - 0.038, CH - 0.024, CH - 0.012]) prof.push([0.0645, gy - 0.0028], [0.0605, gy - 0.0028], [0.0605, gy + 0.0028], [0.0645, gy + 0.0028]);
+    prof.push([0.0645, CH - 0.003], [0.0625, CH], [0.043, CH], [0.041, CH - 0.004], [0.038, CH - 0.015], [0.03, CH - 0.021], [0.018, CH - 0.019], [0.008, CH - 0.011], [0, CH - 0.006]);
+    prof.push([0, CH - 0.034], [0.05, CH - 0.04], [0.056, -0.01], [0.058, -0.055]);
     for (let i = 0; i < 6; i++) {
       const cg = new THREE.Group();
       put(cg, g, [CX(i), 0, 0]);
@@ -400,31 +736,46 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       const pg = new THREE.Group();
       put(pg, cg, [0, R + L, 0]);
       pg.userData.piston = i + 1;
-      cyl(pg, 0.0645, 0.11, [0, 0.02, 0], 'y', 'piston', 'pPiston', [0, 0.14, 0], 40);
-      cyl(pg, 0.063, 0.02, [0, -0.045, 0], 'y', 'piston', 'pPiston', [0, 0.14, 0], 40);
-      cyl(pg, 0.036, 0.004, [0, CH - 0.0005, 0], 'y', 'bowl', 'pPiston', [0, 0.14, 0], 32);
-      torus(pg, 0.065, 0.0026, [0, CH - 0.012, 0], 'y', 'steel', 'pRing1', [0, 0.34, 0]);
-      torus(pg, 0.065, 0.0026, [0, CH - 0.024, 0], 'y', 'forged', 'pRing2', [0, 0.3, 0]);
-      torus(pg, 0.065, 0.0035, [0, CH - 0.038, 0], 'y', 'dark', 'pRing3', [0, 0.26, 0]);
-      cyl(pg, 0.02, 0.1, [0, 0, 0], 'x', 'steel', 'pPin', [0.2, 0, 0], 20);
+      lathe(pg, prof, [0, 0, 0], 'piston', 'pPiston', [0, 0.14, 0], 'y', 48);
+      for (const [dx, dz] of [[0.025, 0.04], [-0.025, 0.04], [0.025, -0.04], [-0.025, -0.04]] as const) cyl(pg, 0.012, 0.0012, [dx * 1.05, CH - 0.0003, dz * 1.05], 'y', 'bowl', 'pPiston', [0, 0.14, 0], 20);
+      for (const s of [1, -1]) cyl(pg, 0.021, 0.004, [s * 0.0625, 0, 0], 'x', 'bowl', 'pPiston', [0, 0.14, 0], 20); // pin bores
+      torus(pg, 0.0628, 0.0024, [0, CH - 0.012, 0], 'y', 'steel', 'pRing1', [0, 0.34, 0]);
+      torus(pg, 0.0628, 0.0024, [0, CH - 0.024, 0], 'y', 'forged', 'pRing2', [0, 0.3, 0]);
+      torus(pg, 0.0628, 0.0028, [0, CH - 0.038, 0], 'y', 'dark', 'pRing3', [0, 0.26, 0]);
+      lathe(pg, [[0.012, -0.05], [0.02, -0.05], [0.02, 0.05], [0.012, 0.05]], [0, 0, 0], 'steel', 'pPin', [0.2, 0, 0], 'x', 24);
       for (const s of [1, -1]) torus(pg, 0.018, 0.0018, [s * 0.051, 0, 0], 'x', 'steel', 'pPin', [s * 0.3, 0, 0]);
+      // I-beam rod: small end with bushing, tapered beam, fracture-split big end, cap bolts
       const rod = new THREE.Group();
       put(rod, cg, [0, R + L, 0]);
       rod.userData.rod = i + 1;
       cyl(rod, 0.03, 0.04, [0, 0, 0], 'x', 'forged', 'pRod', undefined, 24);
-      box(rod, [0.03, L - 0.09, 0.024], [0, -L / 2, 0], 'forged', 'pRod');
-      box(rod, [0.012, L - 0.1, 0.04], [0, -L / 2, 0], 'forged', 'pRod');
+      cyl(rod, 0.0205, 0.041, [0, 0, 0], 'x', 'bearing', 'pRod', undefined, 20);
+      cyl(rod, 0.004, 0.012, [0, 0.032, 0], 'y', 'black', 'pRod', undefined, 8); // oil hole to the pin
+      const beamLen = L - 0.09;
+      for (const s of [1, -1]) {
+        const fl = box(rod, [0.03, beamLen, 0.006], [0, -L / 2, s * 0.012], 'forged', 'pRod');
+        fl.geometry.dispose();
+        fl.geometry = new THREE.CylinderGeometry(0.013, 0.019, beamLen, 4, 1);
+        fl.geometry.rotateY(Math.PI / 4);
+        fl.geometry.scale(1, 1, 0.2);
+      }
+      box(rod, [0.01, beamLen, 0.024], [0, -L / 2, 0], 'forged', 'pRod');
       torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pRod', undefined, Math.PI);
+      for (const s of [1, -1]) rbox(rod, [0.036, 0.03, 0.022], [0, -L + 0.004, s * 0.058], 'forged', 'pRod', undefined, 0.004);
       const cap = torus(rod, 0.055, 0.012, [0, -L, 0], 'x', 'forged', 'pCap', [0, -0.16, 0], Math.PI);
       cap.rotation.x = Math.PI;
-      for (const s of [1, -1]) cyl(rod, 0.006, 0.07, [0, -L - 0.01, s * 0.06], 'y', 'steel', 'pCap', [0, -0.26, 0], 8);
+      for (const s of [1, -1]) {
+        rbox(rod, [0.036, 0.026, 0.022], [0, -L - 0.017, s * 0.058], 'forged', 'pCap', [0, -0.16, 0], 0.004);
+        cyl(rod, 0.006, 0.07, [0, -L - 0.01, s * 0.058], 'y', 'steel', 'pCap', [0, -0.26, 0], 8);
+        bolt(rod, [0, -L - 0.035, s * 0.058], '-y', 0.008, 'pCap', [0, -0.26, 0]);
+      }
       const sh1 = cyl(rod, 0.046, 0.034, [0, -L, 0], 'x', 'bearing', 'pShells', [0, -0.06, 0], 24, true);
       sh1.material = mat('bearing');
       (sh1.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
     }
   },
   mainCaps(g) {
-    for (const x of BULK) {
+    BULK.forEach((x, k) => {
       profileX(g, (sh) => {
         sh.moveTo(-0.08, -0.105);
         sh.lineTo(0.08, -0.105);
@@ -435,17 +786,26 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
         sh.lineTo(-0.058, -0.05);
         sh.lineTo(-0.08, -0.05);
       }, 0.024, [x, 0, 0], 'block', 'mcCaps', [0, -0.12, 0]);
-      for (const s of [1, -1]) cyl(g, 0.011, 0.02, [x, -0.112, s * 0.065], 'y', 'dark', 'mcBolts', [0, -0.22, 0], 6);
-    }
+      for (const s of [1, -1]) bolt(g, [x, -0.112, s * 0.065], '-y', 0.011, 'mcBolts', [0, -0.22, 0]);
+      // position number and front arrow cast into each cap
+      for (let d = 0; d <= k; d++) cyl(g, 0.003, 0.002, [x + 0.0125, -0.095, -0.03 + d * 0.009], 'x', 'black', 'mcCaps', [0, -0.12, 0], 8);
+      box(g, [0.002, 0.004, 0.02], [x + 0.0125, -0.08, 0.03], 'black', 'mcCaps', [0, -0.12, 0]);
+    });
   },
   crankshaft(g, c) {
     const spin = new THREE.Group();
     put(spin, g, [0, 0, 0]);
     spin.userData.spin = 'crank';
     c.inst.push(spin);
-    for (const x of BULK) cyl(spin, 0.05, 0.03, [x, 0, 0], 'x', 'steel', 'ckMain', undefined, 28);
+    for (const x of BULK) {
+      cyl(spin, 0.05, 0.03, [x, 0, 0], 'x', 'steel', 'ckMain', undefined, 28);
+      cyl(spin, 0.004, 0.004, [x, 0.049, 0], 'y', 'black', 'ckMain', undefined, 8); // oil hole
+    }
+    // nose with keyway and the rear flange with its flywheel bolt holes
     cyl(spin, 0.035, 0.12, [0.63, 0, 0], 'x', 'steel', 'ckMain', undefined, 20);
+    box(spin, [0.06, 0.006, 0.01], [0.66, 0.034, 0], 'black', 'ckMain');
     cyl(spin, 0.075, 0.03, [-0.555, 0, 0], 'x', 'forged', 'ckMain', undefined, 32);
+    for (let k = 0; k < 8; k++) cyl(spin, 0.007, 0.031, [-0.555, Math.cos(k * 0.785) * 0.06, Math.sin(k * 0.785) * 0.06], 'x', 'black', 'ckMain', undefined, 10);
     gear(spin, 0.07, 0.025, 30, [-0.52, 0, 0], 'steel', 'ckGear', [-0.15, 0, 0]);
     for (let i = 0; i < 6; i++) {
       const n = i + 1, idx = FIRING.indexOf(n);
@@ -453,14 +813,16 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       put(throwG, spin, [CX(i), 0, 0]);
       throwG.rotation.x = ((-120 * idx) * Math.PI) / 180;
       cyl(throwG, 0.045, 0.048, [0, R, 0], 'x', 'steel', 'ckPins', undefined, 28);
+      cyl(throwG, 0.004, 0.004, [0, R + 0.044, 0], 'y', 'black', 'ckPins', undefined, 8);
       for (const s of [1, -1]) {
+        torus(throwG, 0.045, 0.004, [s * 0.024, R, 0], 'x', 'steel', 'ckPins'); // fillet roll
         profileX(throwG, (sh) => {
           sh.moveTo(-0.052, 0);
           sh.lineTo(-0.045, R);
           sh.absarc(0, R, 0.05, Math.PI, 0, true);
           sh.lineTo(0.052, 0);
           sh.absarc(0, -0.02, 0.105, 0.2, Math.PI - 0.2, true);
-        }, 0.026, [s * 0.04, 0, 0], 'forged', s > 0 ? 'ckWeights' : 'ckWeights');
+        }, 0.026, [s * 0.04, 0, 0], 'forged', 'ckWeights');
       }
     }
   },
@@ -471,6 +833,9 @@ const builders: Record<string, (g: THREE.Group, c: Comp) => void> = {
       sh.geometry = new THREE.CylinderGeometry(0.051, 0.051, 0.028, 28, 1, true, -Math.PI / 2, Math.PI);
       sh.geometry.rotateZ(Math.PI / 2);
       (sh.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      // oil groove and feed hole in each upper shell
+      const gr = torus(g, 0.0505, 0.002, [x, 0, 0], 'x', 'dark', 'mbUpper', [0, 0.1, 0], Math.PI);
+      cyl(g, 0.004, 0.004, [x, 0.05, 0], 'y', 'black', 'mbUpper', [0, 0.1, 0], 8);
     }
     for (const s of [1, -1]) torus(g, 0.062, 0.004, [s * 0.015, 0, 0], 'x', 'bearing', 'mbThrust', [s * 0.08, 0.1, 0], Math.PI);
   },
