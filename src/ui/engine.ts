@@ -6,6 +6,8 @@
 import './engine.css';
 import { mountCycle } from './engine-cycle';
 import { mountTiming } from './engine-timing';
+import { mountTeardown } from './engine-teardown';
+import { mountPhysics } from './engine-physics';
 import {
   ENGINE_SPEC, ENGINE_CHECKS, ENGINE_COMPONENTS, ENGINE_QUIZ, ENGINE_FAULTS, displacementL, cylinderPressure, cycleForCylinder, cylinderAngle,
   strokeAt, valveLift, pistonFromTdcMm, airTempC, type SimEngine, type EngineFault, type EngineCheck, type Stroke,
@@ -42,7 +44,10 @@ const U = {
 // ---------------- markup ----------------
 const sec = $('sec-engine');
 sec.innerHTML = `
-<section class="panel" style="--c:#f5a623">
+<nav class="egJump" id="egJump"><span>On this page</span>
+  <a href="#eg-3d">3D engine</a><a href="#eg-teardown">Teardown</a><a href="#eg-physics">Basic physics</a><a href="#egCyclePanel">Four-stroke cycle</a><a href="#egTimingPanel">Timing</a><a href="#eg-parts">Parts &amp; systems</a><a href="#eg-shop">Engine shop</a>
+</nav>
+<section class="panel" style="--c:#f5a623" id="eg-3d">
   <h2>The engine · 3D</h2>
   <div class="v3wrap">
     <div><div class="v3box" id="eg3d"></div>
@@ -57,9 +62,11 @@ sec.innerHTML = `
     </div>
   </div>
 </section>
+<section class="panel" style="--c:#e6e6e9" id="eg-teardown"></section>
+<section class="panel" style="--c:#69db7c" id="eg-physics"></section>
 <section class="panel" style="--c:#ff3b30" id="egCyclePanel"></section>
 <section class="panel" style="--c:#b07aff" id="egTimingPanel"></section>
-<div class="row r2">
+<div class="row r2" id="eg-parts">
   <section class="panel" style="--c:#f5a623">
     <h2>Engine construction · parts explorer</h2>
     <div class="egParts">
@@ -75,7 +82,7 @@ sec.innerHTML = `
     <div class="egQuiz" id="egQuiz"></div>
   </section>
 </div>
-<div class="row r2">
+<div class="row r2" id="eg-shop">
   <section class="panel" style="--c:#69db7c">
     <h2>Engine shop · hands-on checks</h2>
     <div class="bar" style="flex-wrap:wrap;gap:10px;align-items:center">
@@ -117,6 +124,14 @@ function txt(parent: Element, x: number, y: number, s: string, attrs: Record<str
 }
 
 // ---------------- four-stroke cycle and companion / cam timing ----------------
+$('egJump').addEventListener('click', (ev) => {
+  const a = (ev.target as HTMLElement).closest('a[href^="#"]') as HTMLAnchorElement | null;
+  if (!a) return;
+  ev.preventDefault();
+  document.getElementById(a.getAttribute('href')!.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+mountTeardown($('eg-teardown'));
+mountPhysics($('eg-physics'));
 mountCycle($('egCyclePanel'));
 mountTiming($('egTimingPanel'));
 
