@@ -43,10 +43,11 @@ export class Abs extends ControlModule {
   private ebc1(): Frame {
     const s = this.env.state();
     const dis = !this.env.outputs.abs.absEnabled;
+    const pedal = s.driver.brake ? 100 : s.driver.brakePedalPct;
     return this.frame({ id: 0x18f0010b, acr: 'EBC1', name: 'Electronic Brake Controller 1', period: 100,
-      bytes: [(s.absActive ? 0x10 : 0) | (s.braking ? 0x40 : 0), s.braking ? 175 : 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+      bytes: [(s.absActive ? 0x10 : 0) | (s.braking ? 0x40 : 0), Math.round(pedal / 0.4), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
       labels: ['Bits 5–6 SPN 563 ABS active · bits 7–8 SPN 1121 EBS brake switch', 'SPN 521 brake pedal position (0.4 %/bit)', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a'], hl: [0, 1],
-      decode: (s.braking ? `Brake pedal 70%${s.absActive ? ', <b>ABS ACTIVE</b>' : s.lockup ? ', ABS NOT active (disabled by fault): wheels locking' : ''}` : 'Brakes released, ABS not active') + (dis ? ' · ABS function disabled by a fault (see ABS DM1)' : '') });
+      decode: (s.braking ? `Brake pedal ${Math.round(pedal)}%${s.absActive ? ', <b>ABS ACTIVE</b>' : s.lockup ? ', ABS NOT active (disabled by fault): wheels locking' : ''}` : 'Brakes released, ABS not active') + (dis ? ' · ABS function disabled by a fault (see ABS DM1)' : '') });
   }
   private ebc2(): Frame {
     const s = this.env.state();

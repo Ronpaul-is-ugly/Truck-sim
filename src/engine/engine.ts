@@ -8,7 +8,7 @@ import type { System, SimContext } from './system';
 import { Electrical } from './electrical/electrical';
 import { MessageBus } from './j1939/bus';
 import { PowertrainSystem, computeVehicle } from './physics/powertrain';
-import { AirSupplySystem } from './physics/air';
+import { AirBrakeSystem, airInspect, canReleasePark } from './physics/airbrakes';
 import { NoxSensors } from './devices/nox';
 import { defaultOutputs, type ModuleOutputs } from './modules/outputs';
 import { Ecm } from './modules/ecm';
@@ -81,7 +81,7 @@ export class SimEngine {
 
     const builtIn: System[] = [
       new PowertrainSystem(),
-      new AirSupplySystem(),
+      new AirBrakeSystem(),
       { id: 'electrical', order: 300, step: () => this.electricalStep() },
       new NoxSensors(this.subnet),
       { id: 'network', order: 400, step: (c) => this.networkStep(c) },
@@ -184,6 +184,16 @@ export class SimEngine {
       case 'brake':
         if (s.key === 'run' && s.speedMph > 1) s.driver.brake = true;
         return { ok: true };
+      case 'setBrakePedal':
+        s.driver.brakePedalPct = Math.max(0, Math.min(100, a.pct));
+        return { ok: true };
+      case 'setParkBrake':
+        if (!a.applied && !canReleasePark(s)) return { ok: true, text: 'The park knob won\'t stay in: there isn\'t enough air to hold the spring brakes off (it needs about 65 psi).' };
+        s.driver.parkBrake = a.applied;
+        if (!a.applied) s.air.parkPopped = false;
+        return { ok: true };
+      case 'airCheck':
+        return { ok: true, text: airInspect(s, this.faults, a.check) };
       case 'unplug':
       case 'plug': {
         const set = h.unplugged.get(a.circuit) ?? new Set<number>();

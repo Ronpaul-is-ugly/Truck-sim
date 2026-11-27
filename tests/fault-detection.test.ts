@@ -192,11 +192,13 @@ describe('real conditions (sensor and wiring are good)', () => {
     expect(codes(e, 'ecm')).toContain('2795/7');
   });
 
-  it('primary air leak: 55 psi, cluster sets SPN 117 FMI 1', () => {
+  it('primary air leak: the tank bleeds down to about 55 psi at cruise, cluster sets SPN 117 FMI 1', () => {
     const e = engine();
     e.dispatch({ type: 'injectFault', fault: { part: 'mech.airPrimary', kind: 'leak' } });
-    e.run(2500);
-    expect(e.state.airPrimaryPsi).toBe(55);
+    e.run(60000);
+    expect(e.state.airPrimaryPsi).toBeGreaterThan(50);
+    expect(e.state.airPrimaryPsi).toBeLessThan(60);
+    expect(e.state.airSecondaryPsi).toBeGreaterThan(110); // its check valve holds the other circuit
     expect(codes(e, 'clu')).toContain('117/1');
   });
 

@@ -204,6 +204,10 @@ export class Ecm extends ControlModule {
   /** Road speed is calculated from the TCM's output shaft speed in ETC1 (received over the bus). */
   private ccvs(): Frame {
     const now = this.env.now();
+    // parking brake switch (pressure switch on the park valve) and the stop-lamp brake switch
+    const st = this.env.state();
+    const park = st.driver.parkBrake;
+    const brk = st.air.appPrimaryPsi > 4 || st.air.appSecondaryPsi > 4;
     const etc1 = this.heard(0x0cf00203, now) ? this.rx.get(0x0cf00203)! : null;
     let bytes: number[];
     let decode: string;
@@ -221,8 +225,9 @@ export class Ecm extends ControlModule {
       decode = `Vehicle speed ${(raw / 256).toFixed(1)} km/h (${mph.toFixed(0)} mph)`;
     }
     return this.frame({ id: 0x18fef100, acr: 'CCVS', name: 'Cruise Control/Vehicle Speed', period: 100,
-      bytes: [0xff, ...bytes, 0xff, 0xff, 0xff, 0xff, 0xff],
-      labels: ['Status n/a', 'SPN 84 wheel-based speed (lo)', 'SPN 84 wheel-based speed (hi)', 'Switches n/a', 'n/a', 'n/a', 'n/a', 'n/a'], hl: [1, 2], decode });
+      bytes: [0xf3 | (park ? 0x04 : 0), ...bytes, 0xcf | (brk ? 0x10 : 0), 0xff, 0xff, 0xff, 0xff],
+      labels: ['Bits 3–4 SPN 70 parking brake switch', 'SPN 84 wheel-based speed (lo)', 'SPN 84 wheel-based speed (hi)', 'Bits 5–6 SPN 597 brake switch', 'n/a', 'n/a', 'n/a', 'n/a'], hl: [0, 1, 2, 3],
+      decode: `${decode} · parking brake ${park ? 'SET' : 'released'} · brake switch ${brk ? 'ON' : 'off'}` });
   }
 }
 export type { InputReading };

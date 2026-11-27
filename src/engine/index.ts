@@ -1,7 +1,10 @@
 // Public API of the simulation engine. No DOM, no wall clock, no unseeded randomness.
 export { SimEngine, type EngineOptions } from './engine';
 export type { System, SimContext } from './system';
-export type { TruckState, KeyPos, InitialState, Conditions, DriverInputs } from './state';
+export type { TruckState, KeyPos, InitialState, Conditions, DriverInputs, AirBrakeState, Wheel } from './state';
+export { WHEEL_IDS } from './state';
+export { AIR_SPEC, AIR_PARTS, AIR_CHECKS, governorCutOut, canReleasePark, type AirCheck, type ChamberSpec } from './physics/airbrakes';
+export { AIR_FAULTS, AIR_TESTS, type AirFault, type AirTest } from './data/airbrakes';
 export type { FaultSpec, FaultKind, Fault, Intermittent } from './faults';
 export { PRESETS, harnessFaultSpecs, type HarnessFault, type Preset } from './presets';
 export type { Action, ActionResult, LogEntry } from './actions';

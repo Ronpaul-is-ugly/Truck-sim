@@ -1,6 +1,25 @@
 # Truck-sim
 
-Simulators for learning and diagnosing medium and heavy trucks. The first module is the J1939 network and fault code simulator below.
+Simulators for learning and diagnosing medium and heavy trucks. Every module runs on one shared engine, so it is always the same truck:
+the J1939 network and fault code simulator, and the air brake simulator (the **Air brakes** tab).
+
+## Air brakes
+
+`src/engine/physics/airbrakes.ts` is a pressure/flow solver that replaced the old fixed air supply (System id `air`):
+gear-driven compressor (output follows engine rpm), governor, air dryer and purge, supply/primary/secondary tanks with check valves,
+dual-circuit foot valve, rear relay valve, Type 20 front and Type 30/30 rear chambers with pushrod stroke, spring brakes and the park control valve.
+
+How it ties into the rest of the truck:
+
+- Tank pressures feed the cluster's existing primary/secondary pressure sensors, so a real leak shows on the dash gauges, lights the low-air
+  lamp and sets SPN 117/118 FMI 1. The cluster now broadcasts AIR1 (PGN 65198, SPN 1087/1088); the ECM's CCVS carries the parking brake switch
+  (SPN 70) and brake switch (SPN 597); the ABS EBC1 carries the real brake pedal position (SPN 521). The scan tool shows all of them as live data.
+- Braking effort sets the vehicle's deceleration. A brake out of adjustment stops the truck slower; applied spring brakes keep it from moving.
+- New actions: `setBrakePedal`, `setParkBrake`, `airCheck` (master gauge, listen, soap test, drain tanks, pushrod stroke). All logged and replayable.
+
+`src/engine/data/airbrakes.ts` holds the standard air brake check (build-up, governor, static and applied leak-down, low-air warning,
+park valve pop-out, pushrod stroke) with specs, and 14 mystery faults, each a part modifier (`mech.airPrimary leak`, `mech.governor stuck`,
+`mech.slack.lr drift`…). `tests/air-brakes.test.ts` runs each check on a healthy truck and shows each fault failing the check that should catch it.
 
 ## J1939 Network & Fault Code Simulator (v6)
 
@@ -26,7 +45,7 @@ src/engine/            no DOM, no wall clock, no unseeded randomness
   faults.ts            fault modifiers on parts
   presets.ts           every 5.5 catalog fault as part modifiers; 3D-job faults → modifiers
   electrical/          nodal solver + harness netlists (types A–H, CAN backbone, shared 5 V supplies)
-  physics/             powertrain (5.5 values()/stepVehicle()), air supply
+  physics/             powertrain (5.5 values()/stepVehicle()), air brakes (pressure/flow solver)
   modules/             ECM, TCM, ABS, ACM, cluster: limit checks, debounce, DTC memory, DM1/DM2/DM4, PGNs
   devices/nox.ts       smart NOx sensors on the aftertreatment sub-network
   j1939/               frames, BAM transport, bus, CAN bit layout
@@ -75,7 +94,7 @@ scoreLog(sc, log);                              // 5.5 rules: location 50 / type
 
 In the browser, `window.simEngine.log.entries` holds the current session's log.
 
-## Adding a system (e.g. air brakes)
+## Adding a system
 
 ```ts
 const airBrakes: System = {

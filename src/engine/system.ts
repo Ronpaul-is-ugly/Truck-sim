@@ -1,5 +1,5 @@
 // The extension point. Every subsystem (powertrain, air supply, electrical network, control modules,
-// a future air-brake pressure/flow solver…) is a System stepped by the fixed-step clock.
+// the air brake pressure/flow solver…) is a System stepped by the fixed-step clock.
 import type { Rng } from './rng';
 import type { TruckState } from './state';
 import type { FaultSet } from './faults';
