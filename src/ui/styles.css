@@ -63,7 +63,7 @@ input[type=range]{accent-color:var(--red);width:100%}
 .mini b{color:#fff;font-weight:400}
 /* cluster */
 .cluster{background:#000;border:1px solid var(--line2);padding:12px}
-.lamps{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:10px}
+.lamps{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px}
 .lamp{padding:7px 4px;font-size:8.5px;background:#141418;color:#3d3d45;text-align:center;border:1px solid #1e1e24}
 .lamp.on.red{background:var(--red);color:#000;box-shadow:0 0 14px var(--red)}
 .lamp.on.amb{background:var(--amber);color:#000;box-shadow:0 0 14px var(--amber)}
@@ -218,3 +218,21 @@ details ul{margin:6px 0 0;padding-left:20px;font-size:13.5px}
 .codes td{font-size:13.5px}
 #codeSearch{flex:1;min-width:260px}
 a{color:var(--cyan)}
+/* air brakes tab */
+.abGrid{display:grid;grid-template-columns:1fr 250px;gap:16px;align-items:start}
+@media(max-width:900px){.abGrid{grid-template-columns:1fr}}
+#abSvg{width:100%;height:auto;display:block;background:#060608;border:1px solid var(--line)}
+#abGauge{width:100%;max-width:240px;display:block;margin:0 auto 6px}
+.abDash .seg button{padding:6px 10px}
+.abDash input[type=range]{accent-color:var(--green)}
+.abLamps{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
+.abKnob{background:#f5c518;color:#000;border-color:#f5c518;width:100%}
+.abKnob:hover:not(:disabled){background:#ffd84a!important;color:#000}
+.abKnob.set{background:#3a300a;color:#f5c518}
+#abHold.on{background:#e6e6e9;color:#000}
+.abLog{font-size:13px;max-height:220px;overflow:auto}
+.abLog>div{padding:4px 0;border-bottom:1px solid var(--line)}
+.abTest{border:1px solid var(--line);padding:6px 10px;margin:6px 0;background:#0e0e12}
+.abTest summary{cursor:pointer;font-weight:600}
+.abSw .lcd{margin-bottom:8px}
+.small{font-size:13px}

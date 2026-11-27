@@ -61,7 +61,7 @@ export function computeVehicle(s: TruckState, F: FaultSet | null, out: ModuleOut
   }
   s.rpm = rpm;
 
-  const braking = c.brake;
+  const braking = c.brake || s.air.brakeEffort > 0.05;
   let load = !s.running ? 0 : braking ? 0.04 : mph < 2 ? 0.08 : LOADF[c.load] * (0.6 + 0.4 * Math.min(1, mph / 65));
   if (s.accelerating && !braking && s.running) load = Math.min(1, load + 0.25);
   s.load = load;
@@ -129,10 +129,18 @@ export function computeVehicle(s: TruckState, F: FaultSet | null, out: ModuleOut
 export function stepSpeed(s: TruckState, out: ModuleOutputs, dtMs: number): void {
   const c = s.driver;
   const cap = s.running ? Math.min(out.ecm.speedCapMph, out.acm.inducementCapMph) : 0;
-  const target = s.key === 'run' && !s.stalled ? (c.brake ? 0 : Math.min(c.setMph, cap)) : 0;
+  // dragging spring brakes (parked, or air too low to hold them off) stop the truck
+  const springs = s.air.springApply;
+  const target = s.key === 'run' && !s.stalled ? (c.brake || springs > 0.5 ? 0 : Math.min(c.setMph, cap)) : 0;
   const dts = dtMs / 1000;
-  const rate = c.brake ? { dry: 9, wet: 6.5, ice: out.abs.absEnabled ? 3.5 : 2.5 }[c.road] : target > s.speedMph ? 2.2 : 3.5;
-  if (s.speedMph < target - 0.01) {
+  // full braking on each surface (5.5 values) scaled by what the air brakes actually deliver
+  const full = { dry: 9, wet: 6.5, ice: out.abs.absEnabled ? 3.5 : 2.5 }[c.road];
+  const brakeRate = full * Math.max(s.air.brakeEffort, 0.6 * springs);
+  const rate = target > s.speedMph ? 2.2 : Math.max(c.brake ? 1 : 3.5, brakeRate);
+  if (brakeRate > 0.2 && s.speedMph > 0) {
+    s.speedMph = Math.max(0, s.speedMph - rate * dts);
+    s.accelerating = false;
+  } else if (s.speedMph < target - 0.01) {
     s.speedMph = Math.min(target, s.speedMph + rate * dts);
     s.accelerating = true;
   } else {

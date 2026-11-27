@@ -8,7 +8,9 @@ import type { TruckState } from '../state';
 import { SA2ECU, type EcuKey } from '../data/catalog';
 
 export interface ClusterDisplay {
-  lamps: { rsl: boolean; awl: boolean; mil: boolean; pl: boolean; abs: boolean; regen: boolean; def: boolean; com: boolean };
+  lamps: { rsl: boolean; awl: boolean; mil: boolean; pl: boolean; abs: boolean; regen: boolean; def: boolean; com: boolean; lowAir: boolean; park: boolean };
+  /** Dash air gauges, from the cluster's own pressure sensors. */
+  air: { primaryPsi: number | 'ERR'; secondaryPsi: number | 'ERR' };
   /** null = dashes. 'ERR' = sender says its sensor is bad. */
   gauges: Record<'rpm' | 'mph' | 'gear' | 'coolantF' | 'oilPsi' | 'boostPsi' | 'fuelPct' | 'defPct' | 'mpg', string | number | null>;
   codes: { sa: number; ecu: EcuKey; spn: number; fmi: number; oc: number; red: boolean }[];
@@ -30,6 +32,7 @@ export class Cluster extends ControlModule {
     this.watch = [0x0cf00400];
     this.periodic = [
       { id: 0x18fefc17, period: 1000, build: () => this.dd() },
+      { id: 0x18feae17, period: 1000, build: () => this.air1() },
       { id: 0x18feca17, period: 1000, build: () => this.dm1() },
     ];
   }
@@ -66,6 +69,21 @@ export class Cluster extends ControlModule {
       decode: bad ? 'Fuel level: ERROR indicator (0xFE)' : `Fuel level ${Math.round(f.value ?? 0)}%` });
   }
 
+  /** AIR1 (PGN 65198): service brake circuit pressures from the cluster's own sensors, 8 kPa/bit. */
+  private air1(): Frame {
+    const raw = (cid: string) => {
+      const r = this.input(cid);
+      return !r.valid || r.value === null ? 0xfe : Math.max(0, Math.min(250, Math.round((r.value * 6.894757) / 8)));
+    };
+    const p = raw('airp');
+    const q = raw('airs');
+    const psi = (b: number) => (b === 0xfe ? 'ERROR' : `${Math.round((b * 8) / 6.894757)} psi`);
+    return this.frame({ id: 0x18feae17, acr: 'AIR1', name: 'Air Supply Pressure', period: 1000,
+      bytes: [0xff, 0xff, p, q, 0xff, 0xff, 0xff, 0xff],
+      labels: ['SPN 46 pneumatic supply n/a', 'SPN 1086 parking/trailer air n/a', 'SPN 1087 service brake circuit 1 air pressure (8 kPa/bit)', 'SPN 1088 service brake circuit 2 air pressure (8 kPa/bit)', 'SPN 1089 n/a', 'SPN 1090 n/a', 'SPN 1351 n/a', 'n/a'], hl: [2, 3],
+      decode: `Primary (circuit 1) ${psi(p)} · secondary (circuit 2) ${psi(q)}` });
+  }
+
   /** What the driver sees. Built only from received frames and the cluster's own inputs and codes. */
   display(): ClusterDisplay | null {
     if (!this.awake) return null;
@@ -95,8 +113,18 @@ export class Cluster extends ControlModule {
       return now - this.wakeAt > TIMEOUT_MS && !this.heard(id, now);
     });
     const ownFuel = this.input('fuel');
+    const airG = (cid: string) => {
+      const r = this.input(cid);
+      return r.valid && r.value !== null ? Math.round(r.value) : ('ERR' as const);
+    };
+    const air = { primaryPsi: airG('airp'), secondaryPsi: airG('airs') };
+    // low-air warning: a pressure reading under 60 psi in either circuit (lamp and buzzer, no debounce)
+    const lowAir = [air.primaryPsi, air.secondaryPsi].some((v) => v !== 'ERR' && v < 60);
+    const ccvs = fr(0x18fef100);
+    const park = !!ccvs && (ccvs[0] & 0x0c) === 0x04;
     return {
-      lamps: { rsl: !!(lb & 0x10), awl: !!(lb & 0x04), mil: !!(lb & 0x40), pl: !!(lb & 0x01), abs: absLamp, regen, def: defLamp, com: noData.length > 0 },
+      air,
+      lamps: { rsl: !!(lb & 0x10), awl: !!(lb & 0x04), mil: !!(lb & 0x40), pl: !!(lb & 0x01), abs: absLamp, regen, def: defLamp, com: noData.length > 0, lowAir, park },
       gauges: {
         rpm: g(0x0cf00400, (b) => rb2(b, 3, (r) => Math.round(r * 0.125))),
         mph: g(0x18fef100, (b) => rb2(b, 1, (r) => Math.round(r / 256 / 1.609344))),

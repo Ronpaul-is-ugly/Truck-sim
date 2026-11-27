@@ -327,7 +327,7 @@ function refreshPanelLive(){
 document.addEventListener('click',e=>{const b=e.target.closest('[data-dtc]');if(!b)return;const[ecu,spn,fmi]=b.dataset.dtc.split(':');S.sel={ecu,spn:+spn,fmi:+fmi};renderExplain();showTab('faults');});
 
 // ===================== cluster =====================
-const LAMPS=[['rsl','STOP','red'],['awl','CHECK','amb'],['mil','MIL','amb'],['pl','PROTECT','amb'],['abs','ABS','amb'],['regen','DPF','amb'],['def','DEF','amb'],['com','J1939','red']];
+const LAMPS=[['rsl','STOP','red'],['awl','CHECK','amb'],['mil','MIL','amb'],['pl','PROTECT','amb'],['abs','ABS','amb'],['regen','DPF','amb'],['def','DEF','amb'],['com','J1939','red'],['lowAir','LOW AIR','red'],['park','PARK','red']];
 function renderCluster(){
   const v=S.v,dead=busDead(),off=S.ctrl.key==='off';
   const D=eng.module('clu').display();
@@ -335,12 +335,13 @@ function renderCluster(){
   $('lamps').innerHTML=LAMPS.map(([k,n,c])=>`<div class="lamp ${c} ${st[k]?'on':''} ${k==='rsl'&&st[k]?'blink':''}">${n}</div>`).join('');
   const g=(name,x,big)=>`<div class="g ${big?'big':''}"><div class="v ${x==='ERR'?'err':''}">${x==null?'--':x}</div><div class="n">${name}</div></div>`;
   const G=D?D.gauges:{};
-  $('gauges').innerHTML=[g('rpm',G.rpm,1),g('mph',G.mph,1),g('gear',G.gear,1),g('coolant °F',G.coolantF),g('oil psi',G.oilPsi),g('boost psi',G.boostPsi),g('fuel %',G.fuelPct),g('DEF %',G.defPct),g('mpg',G.mpg)].join('');
+  $('gauges').innerHTML=[g('rpm',G.rpm,1),g('mph',G.mph,1),g('gear',G.gear,1),g('coolant °F',G.coolantF),g('oil psi',G.oilPsi),g('boost psi',G.boostPsi),g('fuel %',G.fuelPct),g('DEF %',G.defPct),g('mpg',G.mpg),g('air pri psi',D?D.air.primaryPsi:null),g('air sec psi',D?D.air.secondaryPsi:null)].join('');
   let m='';
   if(off)m='<div class="muted">KEY OFF · CLUSTER DARK</div>';
   else{
     if(D&&D.noData.length>=4)m+='<div class="r">J1939 DATA LINK FAULT: NO DATA FROM ECM, TCM, ABS, ACM</div>';
     else if(D)D.noData.forEach(e=>m+=`<div class="r">NO DATA FROM ${ECUS[e].name.toUpperCase()} (SA ${ECUS[e].sa})</div>`);
+    if(D&&D.lamps.lowAir)m+='<div class="r">LOW AIR PRESSURE · BUZZER</div>';
     if(v.lockup)m+='<div class="r">WHEEL LOCKUP: ABS DISABLED BY FAULT</div>';
     else if(v.absActive)m+='<div class="w">ABS ACTIVE · MODULATING BRAKES</div>';
     if(D)D.codes.forEach(d=>m+=`<div class="${d.red?'r':'w'}" data-dtc="${d.ecu}:${d.spn}:${d.fmi}" style="cursor:pointer">SA ${d.sa} ${ECUS[d.ecu].name.toUpperCase()} · SPN ${d.spn} FMI ${d.fmi} · OC ${d.oc}</div>`);
@@ -355,7 +356,8 @@ function renderCluster(){
   else{
     s=`ENGINE RUNNING · ${v.mph.toFixed(0)} mph · ${v.gear?'gear '+v.gear:'neutral'} · ${Math.round(v.rpm)} rpm · load ${Math.round(v.load)}%`;
     const fl=[];
-    if(v.braking)fl.push(v.lockup?'<span class="r">HARD BRAKING · WHEELS LOCKED</span>':v.absActive?'<span class="w">HARD BRAKING · ABS ACTIVE</span>':'<span class="w">HARD BRAKING</span>');
+    if(v.braking)fl.push(v.lockup?'<span class="r">BRAKING · WHEELS LOCKED</span>':v.absActive?'<span class="w">BRAKING · ABS ACTIVE</span>':'<span class="w">BRAKING</span>');
+    if(eng.state.driver.parkBrake)fl.push('<span class="w">PARKING BRAKE SET</span>');
     if(v.limp)fl.push('<span class="w">LIMP MODE: pedal ignored, 20 mph limit</span>');
     if(eng.outputs.acm.inducementCapMph<10)fl.push('<span class="r">DEF INDUCEMENT: 5 mph limit</span>');
     else if(v.protect)fl.push('<span class="r">ENGINE PROTECTION DERATE: 45 mph limit</span>');
@@ -386,7 +388,7 @@ $('loadSel').addEventListener('change',e=>{eng.dispatch({type:'setLoad',load:e.t
 $('roadSel').addEventListener('change',e=>{eng.dispatch({type:'setRoad',road:e.target.value});});
 $('btnBrake').addEventListener('click',()=>{if(S.ctrl.key==='run'&&S.mphAct>1){eng.dispatch({type:'brake'});updateCtrlUI();}});
 // ===================== tab navigation =====================
-const TABNAMES=['faults','scan','meter','bus','codes','reference'];
+const TABNAMES=['faults','air','scan','meter','bus','codes','reference'];
 function showTab(t){
   if(!TABNAMES.includes(t))t='faults';
   TABNAMES.forEach(n=>$('sec-'+n).classList.toggle('on',n===t));
@@ -1525,7 +1527,9 @@ function h3LoadEngineModel(){
   if(!THREE.GLTFLoader){ENG3D.state='fail';return;}
   ENG3D.state='loading';
   const fail=e=>{console.warn('Engine model failed to load; using built-in geometry.',e);ENG3D.state='fail';};
-  fetch(new URL('models/mx13_engine.glb',document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();}).then(buf=>{
+  // hosts that won't serve .glb get the same bytes as base64 text (see scripts/preview.sh)
+  const getBin=u=>fetch(new URL(u,document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();});
+  getBin('models/mx13_engine.glb').catch(()=>fetch(new URL('models/mx13_engine.glb.b64.txt',document.baseURI)).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(t=>Uint8Array.from(atob(t.trim()),c=>c.charCodeAt(0)).buffer)).then(buf=>{
     const gl=new THREE.GLTFLoader();
     gl.parse(buf,'',g=>{
       g.scene.traverse(o=>{if(o.name==='ValveCover')o.userData.cover=true;if(o.name==='Inside'){o.userData.inside=true;o.visible=false;}if(o.isMesh&&!o.material.userData.fixed){o.material.side=THREE.FrontSide;o.material.color.convertLinearToSRGB();o.material.userData.fixed=true;}});

@@ -9,6 +9,42 @@ export interface DriverInputs {
   load: LoadCase;
   road: Road;
   brake: boolean;
+  /** Foot valve application, 0–100 % (the hard-brake button counts as 100 %). */
+  brakePedalPct: number;
+  /** Park control knob (yellow diamond) pulled out: spring brakes applied. */
+  parkBrake: boolean;
+}
+
+export type Wheel = 'lf' | 'rf' | 'lr' | 'rr';
+export const WHEEL_IDS: Wheel[] = ['lf', 'rf', 'lr', 'rr'];
+
+/** The air brake system: what a gauge, a ruler or your ears would find on the real truck. */
+export interface AirBrakeState {
+  /** Supply (wet) tank, right after the air dryer. */
+  supplyPsi: number;
+  /** Governor has the compressor pumping. */
+  compressorLoaded: boolean;
+  /** Free air the compressor is putting into the system right now. */
+  compressorScfm: number;
+  /** Air dryer purge valve is blowing (a short burst every time the governor cuts out). */
+  purging: boolean;
+  /** Pressure delivered by the foot valve: primary circuit to the rear, secondary to the front. */
+  appPrimaryPsi: number;
+  appSecondaryPsi: number;
+  /** Service chamber pressure at each wheel. */
+  chamberPsi: Record<Wheel, number>;
+  /** Pushrod travel at each wheel, inches. */
+  strokeIn: Record<Wheel, number>;
+  /** Spring brake hold-off pressure (rear). Low = springs applying. */
+  holdoffPsi: number;
+  /** Rear spring brakes applying, 0–1. */
+  springApply: number;
+  /** Braking force at each wheel, 0–1 of a healthy full application. */
+  wheelForce: Record<Wheel, number>;
+  /** Whole-truck braking effort, 0–1. */
+  brakeEffort: number;
+  /** The park knob popped out on its own because supply pressure fell. */
+  parkPopped: boolean;
 }
 
 /** Real-world conditions that are not faults (a nearly empty DEF tank is not a broken part). */
@@ -71,6 +107,7 @@ export interface TruckState {
   pulseDropouts: Record<string, number>;
   /** Cam signal position error versus the crank reference, in crank degrees. */
   camPhaseErrorDeg: number;
+  air: AirBrakeState;
 }
 
 export interface InitialState {
@@ -84,7 +121,7 @@ export const DEFAULT_CONDITIONS: Conditions = { defLevelPct: 65, dpf: 'normal', 
 
 /** Simulator 5.5 start-up: key RUN, 62 mph, loaded, dry road. */
 export function createTruckState(init: InitialState = {}): TruckState {
-  const driver: DriverInputs = { setMph: 62, load: 'loaded', road: 'dry', brake: false, ...init.driver };
+  const driver: DriverInputs = { setMph: 62, load: 'loaded', road: 'dry', brake: false, brakePedalPct: 0, parkBrake: false, ...init.driver };
   const conditions: Conditions = { ...DEFAULT_CONDITIONS, ...init.conditions };
   return {
     timeMs: 0,
@@ -121,8 +158,8 @@ export function createTruckState(init: InitialState = {}): TruckState {
     noxInPpm: 0,
     noxOutPpm: 0,
     transOilC: 70,
-    airPrimaryPsi: 112,
-    airSecondaryPsi: 112,
+    airPrimaryPsi: 118,
+    airSecondaryPsi: 118,
     ambientC: conditions.ambientC,
     defTempC: 22,
     fuelLevelPct: conditions.fuelStartPct,
@@ -133,5 +170,20 @@ export function createTruckState(init: InitialState = {}): TruckState {
     cylinderContribution: [1, 1, 1, 1, 1, 1],
     pulseDropouts: {},
     camPhaseErrorDeg: 0,
+    air: {
+      supplyPsi: 118,
+      compressorLoaded: false,
+      compressorScfm: 0,
+      purging: false,
+      appPrimaryPsi: 0,
+      appSecondaryPsi: 0,
+      chamberPsi: { lf: 0, rf: 0, lr: 0, rr: 0 },
+      strokeIn: { lf: 0, rf: 0, lr: 0, rr: 0 },
+      holdoffPsi: driver.parkBrake ? 0 : 118,
+      springApply: driver.parkBrake ? 1 : 0,
+      wheelForce: { lf: 0, rf: 0, lr: 0, rr: 0 },
+      brakeEffort: 0,
+      parkPopped: false,
+    },
   };
 }

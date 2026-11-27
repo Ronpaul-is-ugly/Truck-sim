@@ -73,8 +73,10 @@ Object.assign(P, {
   'fuel/open': { faults: [f('fuel.sig@s1', 'open')] },
   'fuel/gnd': { faults: [f('fuel.sig@s1', 'shortToGround')] },
   'fuel/float': { faults: [f('mech.fuelFloat', 'stuck', { value: 0 })], settleMs: 480000 },
-  'airp/low': { faults: [f('mech.airPrimary', 'leak')] },
-  'airs/low': { faults: [f('mech.airSecondary', 'leak')] },
+  // a big leak: the tank bleeds down until the compressor (at cruise rpm) holds it near 55 psi
+  'airp/low': { faults: [f('mech.airPrimary', 'leak')], settleMs: 50000 },
+  // the secondary tank is smaller, so the same hole is a faster psi/min there
+  'airs/low': { faults: [f('mech.airSecondary', 'leak', { value: 540 })], settleMs: 50000 },
   'def/low': { faults: [], conditions: { defLevelPct: 8 } },
   'def/empty': { faults: [], conditions: { defLevelPct: 0 } },
   'dpf/soot': { faults: [], conditions: { dpf: 'soot' } },
