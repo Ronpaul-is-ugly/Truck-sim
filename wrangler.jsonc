@@ -1,0 +1,10 @@
+// Cloudflare Workers deploy config: serves the static site built by `npm run build:site`.
+// Workers Builds settings: build command `npm run build:site`, deploy command `npx wrangler deploy`.
+{
+  "name": "truck-sim-1",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}
