@@ -1,6 +1,6 @@
 /* Engine fundamentals tab (src/ui/engine.ts) */
-.egCycle{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
-@media(max-width:900px){.egCycle{grid-template-columns:1fr}.egCycle>svg{max-width:300px;margin:0 auto}}
+.egCycle{display:grid;grid-template-columns:400px 1fr;gap:18px;align-items:start}
+@media(max-width:900px){.egCycle{grid-template-columns:1fr}.egCycle>div:first-child{max-width:420px;margin:0 auto;width:100%}}
 #egCyl{width:100%;background:#0b0b0e;border:1px solid var(--line)}
 .egStroke{font-family:'Michroma','Titillium Web',sans-serif;font-size:22px;letter-spacing:.12em;text-transform:uppercase;margin:0 0 2px}
 .egStroke small{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0;color:var(--muted);margin-left:10px;text-transform:none}
@@ -56,3 +56,18 @@ table.egSpec td:first-child{color:var(--muted);width:42%}
 .egLog>div{border-bottom:1px solid var(--line);padding:5px 0}
 .egCodes span{display:inline-block;border:1px solid var(--amber);color:var(--amber);padding:0 6px;margin:2px 4px 2px 0;font-family:'IBM Plex Mono',monospace;font-size:12px}
 .egCalc input{font:inherit;font-size:14px;background:#111115;color:var(--ink);border:1px solid var(--line2);padding:5px 8px}
+
+.egCards{display:grid;grid-template-columns:1fr repeat(4,1.3fr);gap:8px;margin-bottom:12px}
+@media(max-width:1020px){.egCards{grid-template-columns:repeat(2,1fr)}}
+.egCards button{text-align:left;text-transform:none;letter-spacing:0;font-weight:400;padding:9px 11px;border-top:3px solid var(--sc,#e6e6e9);display:flex;flex-direction:column;gap:4px;line-height:1.35}
+.egCards button b{font-family:'Michroma',sans-serif;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--sc,#fff);font-weight:400}
+.egCards button span{font-size:13px;color:#c9c9cf}
+.egCards button em{font-style:normal;font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.egCards button.on{background:#1a1a20;border-color:var(--sc,#fff);box-shadow:inset 0 0 0 1px var(--sc,#fff)}
+.egCards button.now:not(.on){background:#141418}
+.egExplain{font-size:14.5px;line-height:1.55}
+.egExplain p{margin:0 0 8px}
+.egEvents{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.egEvents button{text-align:left;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;padding:5px 9px}
+.egEvents button b{font-family:'IBM Plex Mono',monospace;color:#fff;margin-right:6px;display:inline-block;min-width:38px}
+#egTime{width:100%;background:#0b0b0e;border:1px solid var(--line)}
