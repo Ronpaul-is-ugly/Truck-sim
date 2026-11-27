@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ENGINE_SPEC, cylinderAngle, valveLift } from '../engine';
 import { TEARDOWN, type TeardownPart } from './teardown-data';
+import { detailHTML, detailFor } from './engine-detail';
 
 type V = [number, number, number];
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -675,7 +676,7 @@ export function mountTeardown(root: HTMLElement) {
     const sub = S.inspect && S.subSel ? p.subs.find((s) => s.id === S.subSel) : null;
     card.innerHTML = `
       <h4>${esc(p.name)} <span class="muted small" style="letter-spacing:.08em">${block ? '· stays on the stand' : `· step ${c.order + 1} of ${comps.length - 1}`}</span></h4>
-      <p>${esc(p.does)}</p>
+      <div class="egDetail">${detailHTML(p.id, esc) || `<p>${esc(p.does)}</p>`}</div>
       <p><span class="k">Made of</span>${esc(p.made)}</p>
       <p><span class="k">Inspect</span>${esc(p.inspect)}</p>
       <p><span class="k">Removal</span>${esc(p.removal)}</p>
@@ -685,7 +686,7 @@ export function mountTeardown(root: HTMLElement) {
         <button id="tdIns" class="dark">${S.inspect === p.id ? 'Close inspection' : 'Take it apart on the bench'}</button>
       </div>
       <div class="tdSubs"><div class="lab" style="margin:10px 0 4px">Made up of</div>${p.subs.map((s) => `<button data-sub="${s.id}" class="${S.subSel === s.id ? 'on' : ''}">${esc(s.name)}</button>`).join('')}</div>
-      ${sub ? `<div class="tdSub"><b>${esc(sub.name)}</b><p>${esc(sub.does)}</p><p><span class="k">Made of</span>${esc(sub.made)}</p></div>` : ''}`;
+      ${sub ? `<div class="tdSub"><b>${esc(sub.name)}</b><p>${esc(sub.does)}</p><p><span class="k">Made of</span>${esc(sub.made)}</p>${detailFor(sub.id) && detailFor(sub.id) !== detailFor(p.id) ? `<details><summary>More on ${esc(detailFor(sub.id)!.title.toLowerCase())}</summary>${detailHTML(sub.id, esc)}</details>` : ''}</div>` : ''}`;
   }
   function select(id: string | null) {
     S.sel = id;

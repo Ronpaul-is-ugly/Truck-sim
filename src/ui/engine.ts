@@ -8,6 +8,8 @@ import { mountCycle } from './engine-cycle';
 import { mountTiming } from './engine-timing';
 import { mountTeardown } from './engine-teardown';
 import { mountPhysics } from './engine-physics';
+import { mountSystems } from './engine-systems';
+import { detailHTML } from './engine-detail';
 import {
   ENGINE_SPEC, ENGINE_CHECKS, ENGINE_COMPONENTS, ENGINE_QUIZ, ENGINE_FAULTS, displacementL, cylinderPressure, cycleForCylinder, cylinderAngle,
   strokeAt, valveLift, pistonFromTdcMm, airTempC, type SimEngine, type EngineFault, type EngineCheck, type Stroke,
@@ -45,7 +47,7 @@ const U = {
 const sec = $('sec-engine');
 sec.innerHTML = `
 <nav class="egJump" id="egJump"><span>On this page</span>
-  <a href="#eg-3d">3D engine</a><a href="#eg-teardown">Teardown</a><a href="#eg-physics">Basic physics</a><a href="#egCyclePanel">Four-stroke cycle</a><a href="#egTimingPanel">Timing</a><a href="#eg-parts">Parts &amp; systems</a><a href="#eg-shop">Engine shop</a>
+  <a href="#eg-3d">3D engine</a><a href="#eg-teardown">Teardown</a><a href="#eg-physics">Basic physics</a><a href="#eg-systems">Engine systems</a><a href="#egCyclePanel">Four-stroke cycle</a><a href="#egTimingPanel">Timing</a><a href="#eg-parts">Parts &amp; systems</a><a href="#eg-shop">Engine shop</a>
 </nav>
 <section class="panel" style="--c:#f5a623" id="eg-3d">
   <h2>The engine · 3D</h2>
@@ -64,6 +66,7 @@ sec.innerHTML = `
 </section>
 <section class="panel" style="--c:#e6e6e9" id="eg-teardown"></section>
 <section class="panel" style="--c:#69db7c" id="eg-physics"></section>
+<section class="panel" style="--c:#6fd3ff" id="eg-systems"></section>
 <section class="panel" style="--c:#ff3b30" id="egCyclePanel"></section>
 <section class="panel" style="--c:#b07aff" id="egTimingPanel"></section>
 <div class="row r2" id="eg-parts">
@@ -132,6 +135,7 @@ $('egJump').addEventListener('click', (ev) => {
 });
 mountTeardown($('eg-teardown'));
 mountPhysics($('eg-physics'));
+mountSystems($('eg-systems'));
 mountCycle($('egCyclePanel'));
 mountTiming($('egTimingPanel'));
 
@@ -173,7 +177,7 @@ txt(ps, 8, 596, 'Inline six, viewed from the front. Cut through one cylinder.', 
 function partHTML(id: string | null, hint: string) {
   const c = id ? ENGINE_COMPONENTS.find((x) => x.id === id) : null;
   return c
-    ? `<h4>${esc(c.name)} <span class="muted small" style="letter-spacing:.08em">· ${c.group}</span></h4><p>${esc(c.does)}</p><p><span class="k">Made of</span>${esc(c.madeOf)}</p><p><span class="k">Measure</span>${esc(c.measure)}</p><p><span class="k">How it fails</span>${esc(c.fails)}</p>`
+    ? `<h4>${esc(c.name)} <span class="muted small" style="letter-spacing:.08em">· ${c.group}</span></h4><div class="egDetail">${detailHTML(c.id, esc) || `<p>${esc(c.does)}</p>`}</div><p><span class="k">Made of</span>${esc(c.madeOf)}</p><p><span class="k">Measure</span>${esc(c.measure)}</p><p><span class="k">How it fails</span>${esc(c.fails)}</p>`
     : `<p class="muted">${hint}</p>`;
 }
 function showPart(id: string | null) {
@@ -226,7 +230,7 @@ $('egDrill').addEventListener('click', () => {
     renderDrill();
     return;
   }
-  const order = ENGINE_COMPONENTS.map((c) => c.id).sort(() => Math.random() - 0.5).slice(0, 10);
+  const order = ENGINE_COMPONENTS.map((c) => c.id).filter((id) => groups[id]).sort(() => Math.random() - 0.5).slice(0, 10);
   U.drill = { order, i: 0, right: 0, msg: '' };
   showPart(null);
   renderDrill();
@@ -253,6 +257,8 @@ const SPOTS3D: { id: string; label: string; pos: [number, number, number]; insid
   { id: 'oilPump', label: 'Oil filters & pump', pos: [-0.1, 0.32, 0.47] },
   { id: 'oilPan', label: 'Oil pan', pos: [0.25, -0.15, 0.2] },
   { id: 'waterJacket', label: 'Water pump & coolant', pos: [0.8, 0.62, 0.25] },
+  { id: 'egr', label: 'EGR cooler & valve', pos: [0.15, 1.33, -0.4] },
+  { id: 'ecm', label: 'ECM', pos: [0.05, 0.48, 0.36] },
 ];
 type Viewer = { select(id: string): void; setCover(on: boolean): void; setEnv(e: string): void; home(now?: boolean): void; cover: boolean };
 const v3 = (window as unknown as { v3Viewer: (box: HTMLElement, o: unknown) => Viewer }).v3Viewer($('eg3d'), {
