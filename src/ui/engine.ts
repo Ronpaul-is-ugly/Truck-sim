@@ -6,6 +6,8 @@
 import './engine.css';
 import { mountCycle } from './engine-cycle';
 import { mountTiming } from './engine-timing';
+import { mountTeardown } from './engine-teardown';
+import { mountPhysics } from './engine-physics';
 import {
   ENGINE_SPEC, ENGINE_CHECKS, ENGINE_COMPONENTS, ENGINE_QUIZ, ENGINE_FAULTS, displacementL, cylinderPressure, cycleForCylinder, cylinderAngle,
   strokeAt, valveLift, pistonFromTdcMm, airTempC, type SimEngine, type EngineFault, type EngineCheck, type Stroke,
@@ -42,9 +44,29 @@ const U = {
 // ---------------- markup ----------------
 const sec = $('sec-engine');
 sec.innerHTML = `
+<nav class="egJump" id="egJump"><span>On this page</span>
+  <a href="#eg-3d">3D engine</a><a href="#eg-teardown">Teardown</a><a href="#eg-physics">Basic physics</a><a href="#egCyclePanel">Four-stroke cycle</a><a href="#egTimingPanel">Timing</a><a href="#eg-parts">Parts &amp; systems</a><a href="#eg-shop">Engine shop</a>
+</nav>
+<section class="panel" style="--c:#f5a623" id="eg-3d">
+  <h2>The engine · 3D</h2>
+  <div class="v3wrap">
+    <div><div class="v3box" id="eg3d"></div>
+      <p class="note" style="margin:6px 0 0">The same MX-13-style model the multimeter harness jobs use. Drag to orbit, scroll to zoom, right-drag to pan. Click a label or a part.</p></div>
+    <div>
+      <div class="bar" style="flex-wrap:wrap">
+        <span class="seg" id="eg3Env"><button data-e="engine" class="on">On the stand</button><button data-e="truck">In the truck</button></span>
+        <button id="eg3Cover">Remove valve cover</button><button id="eg3Home">Reset view</button>
+      </div>
+      <div class="v3chips" id="eg3Chips"></div>
+      <div class="egCard" id="eg3Card"></div>
+    </div>
+  </div>
+</section>
+<section class="panel" style="--c:#e6e6e9" id="eg-teardown"></section>
+<section class="panel" style="--c:#69db7c" id="eg-physics"></section>
 <section class="panel" style="--c:#ff3b30" id="egCyclePanel"></section>
 <section class="panel" style="--c:#b07aff" id="egTimingPanel"></section>
-<div class="row r2">
+<div class="row r2" id="eg-parts">
   <section class="panel" style="--c:#f5a623">
     <h2>Engine construction · parts explorer</h2>
     <div class="egParts">
@@ -60,7 +82,7 @@ sec.innerHTML = `
     <div class="egQuiz" id="egQuiz"></div>
   </section>
 </div>
-<div class="row r2">
+<div class="row r2" id="eg-shop">
   <section class="panel" style="--c:#69db7c">
     <h2>Engine shop · hands-on checks</h2>
     <div class="bar" style="flex-wrap:wrap;gap:10px;align-items:center">
@@ -102,6 +124,14 @@ function txt(parent: Element, x: number, y: number, s: string, attrs: Record<str
 }
 
 // ---------------- four-stroke cycle and companion / cam timing ----------------
+$('egJump').addEventListener('click', (ev) => {
+  const a = (ev.target as HTMLElement).closest('a[href^="#"]') as HTMLAnchorElement | null;
+  if (!a) return;
+  ev.preventDefault();
+  document.getElementById(a.getAttribute('href')!.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+mountTeardown($('eg-teardown'));
+mountPhysics($('eg-physics'));
 mountCycle($('egCyclePanel'));
 mountTiming($('egTimingPanel'));
 
@@ -140,15 +170,20 @@ part('turbo', (g) => { el(g, 'circle', { cx: 505, cy: 175, r: 32, fill: '#5a4038
 txt(ps, 300, 10, 'compressed air → charge air cooler → intake', { 'text-anchor': 'middle', 'font-size': 9, fill: '#6fd3ff' });
 txt(ps, 8, 596, 'Inline six, viewed from the front. Cut through one cylinder.', { 'font-size': 9 });
 
+function partHTML(id: string | null, hint: string) {
+  const c = id ? ENGINE_COMPONENTS.find((x) => x.id === id) : null;
+  return c
+    ? `<h4>${esc(c.name)} <span class="muted small" style="letter-spacing:.08em">· ${c.group}</span></h4><p>${esc(c.does)}</p><p><span class="k">Made of</span>${esc(c.madeOf)}</p><p><span class="k">Measure</span>${esc(c.measure)}</p><p><span class="k">How it fails</span>${esc(c.fails)}</p>`
+    : `<p class="muted">${hint}</p>`;
+}
 function showPart(id: string | null) {
   U.part = id;
   for (const [k, g] of Object.entries(groups)) {
     g.classList.toggle('sel', k === id);
   }
   const c = id ? ENGINE_COMPONENTS.find((x) => x.id === id) : null;
-  $('egPartCard').innerHTML = c
-    ? `<h4>${esc(c.name)} <span class="muted small" style="letter-spacing:.08em">· ${c.group}</span></h4><p>${esc(c.does)}</p><p><span class="k">Made of</span>${esc(c.madeOf)}</p><p><span class="k">Measure</span>${esc(c.measure)}</p><p><span class="k">How it fails</span>${esc(c.fails)}</p>`
-    : `<p class="muted">${ENGINE_COMPONENTS.length} major components. Hover to see a name, click for the details.</p>`;
+  $('egPartCard').innerHTML = partHTML(id, `${ENGINE_COMPONENTS.length} major components. Hover to see a name, click for the details.`);
+  if (!U.drill && c) show3d(c.id, false);
 }
 showPart(null);
 ps.addEventListener('click', (ev) => {
@@ -196,6 +231,73 @@ $('egDrill').addEventListener('click', () => {
   showPart(null);
   renderDrill();
 });
+
+
+// ---------------- 3D engine (shared MX-13 model) ----------------
+// Label positions are in the engine model's own frame: +x front (damper end), +y up, -z exhaust/turbo side.
+const SPOTS3D: { id: string; label: string; pos: [number, number, number]; inside?: boolean; coverOnly?: boolean }[] = [
+  { id: 'valveCover', label: 'Valve cover', pos: [0.32, 1.2, 0.12], coverOnly: true },
+  { id: 'camshaft', label: 'Camshaft', pos: [0.38, 1.1, -0.1], inside: true },
+  { id: 'rocker', label: 'Rockers & bridges', pos: [-0.18, 1.1, 0.08], inside: true },
+  { id: 'injector', label: 'Injector', pos: [0.12, 1.1, 0.0], inside: true },
+  { id: 'valves', label: 'Valves & springs', pos: [-0.5, 1.06, -0.1], inside: true },
+  { id: 'head', label: 'Cylinder head', pos: [0.55, 0.93, 0.27] },
+  { id: 'headGasket', label: 'Head gasket', pos: [-0.55, 0.8, 0.3] },
+  { id: 'block', label: 'Block', pos: [0.35, 0.45, 0.36] },
+  { id: 'liner', label: 'Liners (inside block)', pos: [-0.5, 0.5, 0.36] },
+  { id: 'commonRail', label: 'Common rail & HP pump', pos: [0.15, 0.73, 0.43] },
+  { id: 'intakeManifold', label: 'Intake / charge air', pos: [0.55, 1.12, 0.3] },
+  { id: 'exhaustManifold', label: 'Exhaust manifold', pos: [0.2, 0.9, -0.55] },
+  { id: 'turbo', label: 'VGT turbo', pos: [-0.18, 1.25, -0.6] },
+  { id: 'crankshaft', label: 'Crankshaft & damper', pos: [0.86, 0.25, 0] },
+  { id: 'oilPump', label: 'Oil filters & pump', pos: [-0.1, 0.32, 0.47] },
+  { id: 'oilPan', label: 'Oil pan', pos: [0.25, -0.15, 0.2] },
+  { id: 'waterJacket', label: 'Water pump & coolant', pos: [0.8, 0.62, 0.25] },
+];
+type Viewer = { select(id: string): void; setCover(on: boolean): void; setEnv(e: string): void; home(now?: boolean): void; cover: boolean };
+const v3 = (window as unknown as { v3Viewer: (box: HTMLElement, o: unknown) => Viewer }).v3Viewer($('eg3d'), {
+  env: 'engine',
+  spotFrame: 'engine',
+  spots: SPOTS3D,
+  cams: { engine: [[2.1, 1.75, 2.3], [0, 0.6, 0]], truck: [[5.2, 3.2, 4.6], [1.3, 1.3, 0]] },
+  onPick: (id: string) => show3d(id, true),
+  onCoverNeeded: () => setCover(false),
+});
+let sel3: string | null = null;
+function setCover(on: boolean) {
+  v3.setCover(on);
+  $('eg3Cover').textContent = on ? 'Remove valve cover' : 'Install valve cover';
+}
+function show3d(id: string | null, fromViewer: boolean) {
+  sel3 = id;
+  $('eg3Card').innerHTML = partHTML(id, 'Click a label to see what the part does, what it is made of, what gets measured and how it fails. Remove the valve cover to see the camshaft, rockers, valve springs and injectors.');
+  document.querySelectorAll('#eg3Chips button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.s === id));
+  if (id && SPOTS3D.some((s) => s.id === id)) {
+    const s = SPOTS3D.find((x) => x.id === id)!;
+    if (s.inside && v3.cover) setCover(false);
+    if (!fromViewer) v3.select(id);
+  }
+  if (fromViewer && id && U.part !== id && !U.drill) {
+    U.part = id;
+    for (const [k, g] of Object.entries(groups)) g.classList.toggle('sel', k === id);
+    $('egPartCard').innerHTML = partHTML(id, '');
+  }
+}
+$('eg3Chips').innerHTML = SPOTS3D.map((s) => `<button data-s="${s.id}">${esc(s.label)}</button>`).join('');
+$('eg3Chips').addEventListener('click', (ev) => {
+  const b = (ev.target as HTMLElement).closest('button[data-s]') as HTMLElement | null;
+  if (b) show3d(b.dataset.s!, false);
+});
+$('eg3Cover').addEventListener('click', () => setCover(!v3.cover));
+$('eg3Home').addEventListener('click', () => v3.home());
+$('eg3Env').addEventListener('click', (ev) => {
+  const b = (ev.target as HTMLElement).closest('button[data-e]') as HTMLElement | null;
+  if (!b) return;
+  document.querySelectorAll('#eg3Env button').forEach((x) => x.classList.toggle('on', x === b));
+  v3.setEnv(b.dataset.e!);
+  if (sel3) v3.select(sel3);
+});
+show3d(null, false);
 
 // ---------------- systems (live) ----------------
 function renderSystems() {

@@ -43,6 +43,7 @@ input[type=range]{accent-color:var(--red);width:100%}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ctrlGrid{display:grid;grid-template-columns:auto 1.6fr 1fr .8fr auto auto;gap:18px;align-items:end}
 @media(max-width:1100px){.ctrlGrid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:640px){.ctrlGrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.ctrlGrid>div{min-width:0}}
 .lab{font-size:9.5px;color:var(--muted);margin-bottom:6px;white-space:nowrap}
 .lab b{color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0;margin-left:6px}
 .status{margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--cyan);border-top:1px solid var(--line);padding-top:10px}
@@ -242,3 +243,26 @@ a{color:var(--cyan)}
 .abTest summary{cursor:pointer;font-weight:600}
 .abSw .lcd{margin-bottom:8px}
 .small{font-size:13px}
+
+/* page navigation: one page per system, tools grouped */
+.pnav{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:4px 0 14px}
+.pnav button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px 14px;background:#0e0e12;border:1px solid var(--line2);border-top:3px solid #2a2a31;text-transform:none;letter-spacing:0}
+.pnav button b{font-family:'Michroma','Titillium Web',sans-serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:400;color:#c9c9cf}
+.pnav button span{font-size:12px;color:var(--muted);font-weight:400}
+.pnav button:hover{background:#15151a}
+.pnav button.on{border-top-color:var(--red);background:#17171c}
+.pnav button.on b{color:#fff}
+@media(max-width:900px){.pnav{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:560px){.pnav{grid-template-columns:repeat(2,1fr)}.pnav button span{display:none}}
+.subnav{margin-top:0}
+[hidden]{display:none!important}
+.v3wrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:900px){.v3wrap{grid-template-columns:1fr}}
+.v3box{position:relative;height:min(520px,62vh);min-height:360px;background:#050507;border:1px solid var(--line);overflow:hidden}
+.v3box canvas{display:block}
+.h3lab.v3spot{color:#e6e6e9;border-color:#44444d}
+.h3lab.v3spot:hover{border-color:#fff}
+.v3chips{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.v3chips button{font-size:10px;padding:4px 8px;text-transform:none;letter-spacing:0}
+.v3chips button.on{border-color:var(--cyan);color:var(--cyan)}
+.h3lab.v3spot.behind{opacity:.3}.h3lab.v3spot.behind:hover,.h3lab.v3spot.on{opacity:1}

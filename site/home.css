@@ -111,3 +111,5 @@ h1{font-size:clamp(24px,3.3vw,38px);line-height:1.3;letter-spacing:.06em;color:#
   .lede{font-size:16.5px}
   .cta .btn{flex:1 1 100%}
 }
+.card .cardlink{display:inline-block;margin-top:14px;font-size:13px;color:var(--c,#fff);text-decoration:none;border-bottom:1px solid currentColor}
+.card .cardlink:hover{color:#fff}

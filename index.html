@@ -14,12 +14,33 @@
   <header class="top">
     <div>
       <div class="blocks"><i style="background:#ff3b30"></i><i style="background:#f5a623"></i><i style="background:#3b8fd9"></i><i style="background:#e6e6e9"></i><i style="background:#69db7c"></i></div>
-      <h1>J1939 Network Diagnostic Console</h1>
-      <p class="sub">Heavy-duty truck network · fault injection · scan tool · multimeter</p>
+      <h1 id="pageTitle">Tek Simulator</h1>
+      <p class="sub" id="pageSub">One virtual truck · engine · air brakes · electrical · J1939 network</p>
     </div>
   </header>
 
-  <section class="panel" id="canCard" style="--c:#69db7c">
+  <nav class="pnav" id="nav" aria-label="Simulator pages">
+    <button data-tab="engine"><b>Engine</b><span>Construction &amp; fundamentals</span></button>
+    <button data-tab="air"><b>Air brakes</b><span>Compressor to chambers</span></button>
+    <button data-tab="meter"><b>Multimeter</b><span>Electrical &amp; harness</span></button>
+    <button data-tab="bus"><b>CAN network</b><span>J1939 bus &amp; monitor</span></button>
+    <button data-tab="scan" data-page="tools"><b>Diagnostic tools</b><span>Scan tool, faults &amp; codes</span></button>
+  </nav>
+
+  <section class="panel" id="ctrlCard" style="--c:#f5a623">
+    <h2>Vehicle control</h2>
+    <div class="ctrlGrid">
+      <div><div class="lab">Key switch</div><span class="seg" id="keySeg"><button data-k="off">Off</button><button data-k="on">On</button><button data-k="run">Run</button></span></div>
+      <div><div class="lab">Road speed set <b id="mphVal">62 mph</b></div><input type="range" id="mphSlider" min="0" max="75" step="1" value="62"></div>
+      <div><div class="lab">Load</div><select id="loadSel" style="width:100%"><option value="bobtail">Bobtail (tractor only)</option><option value="loaded" selected>Loaded 80,000 lb · flat</option><option value="grade">Loaded · 6% grade</option></select></div>
+      <div><div class="lab">Road surface</div><select id="roadSel" style="width:100%"><option value="dry">Dry</option><option value="wet">Wet</option><option value="ice">Ice</option></select></div>
+      <div><div class="lab">&nbsp;</div><button id="btnBrake" class="alert">Hard brake</button></div>
+      <div><div class="lab">Sim rate</div><span class="bar"><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="btnPause">Pause</button><button id="btnReset">Reset</button></span></div>
+    </div>
+    <div class="status" id="truckState"></div>
+  </section>
+
+  <section class="panel" id="canCard" data-pages="can" style="--c:#69db7c">
     <h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> Understanding CAN</h2>
     <div class="canNav" id="canNav">
       <button data-pg="how" class="on">How CAN works</button>
@@ -166,21 +187,9 @@
     </div>
   </section>
 
-  <section class="panel" style="--c:#f5a623">
-    <h2>Vehicle control</h2>
-    <div class="ctrlGrid">
-      <div><div class="lab">Key switch</div><span class="seg" id="keySeg"><button data-k="off">Off</button><button data-k="on">On</button><button data-k="run">Run</button></span></div>
-      <div><div class="lab">Road speed set <b id="mphVal">62 mph</b></div><input type="range" id="mphSlider" min="0" max="75" step="1" value="62"></div>
-      <div><div class="lab">Load</div><select id="loadSel" style="width:100%"><option value="bobtail">Bobtail (tractor only)</option><option value="loaded" selected>Loaded 80,000 lb · flat</option><option value="grade">Loaded · 6% grade</option></select></div>
-      <div><div class="lab">Road surface</div><select id="roadSel" style="width:100%"><option value="dry">Dry</option><option value="wet">Wet</option><option value="ice">Ice</option></select></div>
-      <div><div class="lab">&nbsp;</div><button id="btnBrake" class="alert">Hard brake</button></div>
-      <div><div class="lab">Sim rate</div><span class="bar"><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="btnPause">Pause</button><button id="btnReset">Reset</button></span></div>
-    </div>
-    <div class="status" id="truckState"></div>
-  </section>
 
-  <div class="row top2">
-    <section class="panel" style="--c:#3b8fd9">
+  <div class="row top2" id="netRow" data-pages="can">
+    <section class="panel" id="netCard" style="--c:#3b8fd9">
       <h2 class="togH" onclick="togglePanel(this,event)"><span class="caret">▾</span> J1939 network <span class="sp"></span><span class="mini">bus load <span class="load"><i id="loadBar"></i></span> <b id="loadTxt">0%</b></span></h2>
       <svg id="net" viewBox="0 0 1000 492" role="img" aria-label="J1939 network diagram"></svg>
       <p class="note" style="margin:6px 0 0">Click any sensor or actuator to inject a fault. Dots on the backbone are frames.</p>
@@ -196,9 +205,9 @@
     </section>
   </div>
 
-  <nav class="nav" id="nav">
-    <div class="navGrp"><span class="navLab">Systems</span><div><button data-tab="engine">Engine</button><button data-tab="air">Air brakes</button><button data-tab="meter">Electrical · multimeter</button></div></div>
-    <div class="navGrp tools"><span class="navLab">Diagnostic tools &amp; reference</span><div><button data-tab="scan">Scan tool</button><button data-tab="faults">Faults</button><button data-tab="bus">Bus monitor</button><button data-tab="codes">Code library</button><button data-tab="reference">Reference</button></div></div>
+
+  <nav class="nav subnav" id="subnav" data-pages="tools">
+    <button data-tab="scan">Scan tool</button><button data-tab="faults">Faults</button><button data-tab="codes">Code library</button><button data-tab="reference">Reference</button>
   </nav>
 
   <div class="tabsec" id="sec-faults">
